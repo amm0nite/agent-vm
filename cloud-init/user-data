@@ -1,0 +1,283 @@
+#cloud-config
+hostname: arch-agent
+manage_etc_hosts: true
+
+users:
+  - name: agent
+    gecos: AI Agent
+    groups: [wheel]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - "@@ARCH_AGENT_SSH_PUBLIC_KEY@@"
+
+package_update: true
+package_upgrade: true
+packages:
+  - base-devel
+  - cage
+  - curl
+  - dbus
+  - e2fsprogs
+  - fd
+  - fzf
+  - foot
+  - git
+  - github-cli
+  - jq
+  - less
+  - man-db
+  - neovim
+  - nodejs
+  - npm
+  - openssh
+  - polkit
+  - ripgrep
+  - rsync
+  - tmux
+  - ttf-dejavu
+  - unzip
+  - wget
+
+write_files:
+  - path: /etc/systemd/system/getty@tty1.service.d/autologin.conf
+    permissions: "0644"
+    content: |
+      [Unit]
+      After=prepare-workspace.service
+      Wants=prepare-workspace.service
+
+      [Service]
+      ExecStart=
+      ExecStart=-/usr/bin/agetty --autologin agent --noclear %I $TERM
+
+  - path: /etc/systemd/system/prepare-workspace.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Prepare the persistent AI workspace
+      Before=getty@tty1.service sshd.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/prepare-ai-workspace
+      RemainAfterExit=yes
+      ExecStop=-/usr/bin/umount /workspace
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/sbin/prepare-ai-workspace
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      disk=/dev/disk/by-id/virtio-AI_WORKSPACE
+      mountpoint=/workspace
+
+      if [[ ! -b "$disk" ]]; then
+        echo "Persistent workspace disk not found: $disk" >&2
+        exit 1
+      fi
+
+      filesystem_type="$(blkid -o value -s TYPE "$disk" || true)"
+      if [[ -z "$filesystem_type" ]]; then
+        mkfs.ext4 -L AI_WORKSPACE "$disk"
+      elif [[ "$filesystem_type" != ext4 ]]; then
+        echo "Refusing unexpected workspace filesystem: $filesystem_type" >&2
+        exit 1
+      fi
+
+      mkdir -p "$mountpoint"
+      mount -o noatime "$disk" "$mountpoint"
+      mkdir -p "$mountpoint/projects"
+      chown agent:agent "$mountpoint/projects"
+
+      while read -r entry_type home_relative workspace_relative extra; do
+        [[ -n "$entry_type" ]] || continue
+        [[ "$entry_type" != \#* ]] || continue
+
+        if [[ -z "$home_relative" || -z "$workspace_relative" || -n "$extra" ]]; then
+          echo "Invalid persistence entry: $entry_type $home_relative $workspace_relative $extra" >&2
+          exit 1
+        fi
+        if [[ "$home_relative" == /* || "$workspace_relative" == /* ||
+              "$home_relative" == "." || "$workspace_relative" == "." ||
+              "/$home_relative/" == *"/../"* || "/$workspace_relative/" == *"/../"* ]]; then
+          echo "Unsafe persistence path: $home_relative -> $workspace_relative" >&2
+          exit 1
+        fi
+
+        home_path="/home/agent/$home_relative"
+        persistent_path="$mountpoint/$workspace_relative"
+        mkdir -p "$(dirname -- "$home_path")" "$(dirname -- "$persistent_path")"
+        chown agent:agent "$(dirname -- "$home_path")" "$(dirname -- "$persistent_path")"
+
+        case "$entry_type" in
+          dir)
+            mkdir -p "$persistent_path"
+            if [[ "$home_relative" == ".ssh" ]]; then
+              chmod 700 "$persistent_path"
+            fi
+            ;;
+          file)
+            touch "$persistent_path"
+            chmod 600 "$persistent_path"
+            ;;
+          json)
+            if [[ ! -s "$persistent_path" ]]; then
+              printf '{}\n' >"$persistent_path"
+            fi
+            chmod 600 "$persistent_path"
+            ;;
+          *)
+            echo "Unknown persistence type: $entry_type" >&2
+            exit 1
+            ;;
+        esac
+
+        chown -R agent:agent "$persistent_path"
+        rm -rf -- "$home_path"
+        ln -sfnT "$persistent_path" "$home_path"
+        chown -h agent:agent "$home_path"
+      done </etc/arch-agent/persist-home.conf
+
+      if [[ -d "$mountpoint/.agent-state" ]]; then
+        chown agent:agent "$mountpoint/.agent-state"
+        chmod 700 "$mountpoint/.agent-state"
+      fi
+
+  - path: /etc/arch-agent/persist-home.conf
+    permissions: "0644"
+    encoding: b64
+    content: "@@ARCH_AGENT_PERSIST_HOME_CONFIG@@"
+
+  - path: /usr/local/bin/agent-session
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      export PATH="/home/agent/.local/bin:$PATH"
+
+      mode="${1:-}"
+      if [[ -z "$mode" && -r /sys/class/dmi/id/product_name ]]; then
+        product_name="$(</sys/class/dmi/id/product_name)"
+        case "$product_name" in
+          arch-agent-gtk-*) mode="${product_name#arch-agent-gtk-}" ;;
+          arch-agent-none-*) mode="${product_name#arch-agent-none-}" ;;
+          *) mode=shell ;;
+        esac
+      fi
+
+      cd /workspace/projects
+      clear
+      printf '\n  Disposable Arch Agent VM\n'
+      printf '  Persistent workspace: /workspace/projects\n'
+      printf '  Persistent agent state: /workspace/.agent-state\n\n'
+
+      case "$mode" in
+        codex)
+          exec codex --yolo
+          ;;
+        claude)
+          exec claude --dangerously-skip-permissions
+          ;;
+        shell|arch-agent-|"")
+          printf '  Start an agent with:  codex --yolo\n'
+          printf '                        claude --dangerously-skip-permissions\n\n'
+          exec bash -l
+          ;;
+        *)
+          printf 'Unknown startup mode %q; opening a shell.\n\n' "$mode" >&2
+          exec bash -l
+          ;;
+      esac
+
+  - path: /usr/local/bin/graphical-agent-session
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+
+      # Cage gives the VM a minimal Wayland session containing only Foot.
+      # If graphics initialization fails, preserve access through the console.
+      mode="${1:-shell}"
+      dbus-run-session -- cage -s -- foot --fullscreen /usr/local/bin/agent-session "$mode"
+      status=$?
+      if (( status != 0 )); then
+        printf 'Graphical terminal failed (status %d); using the console.\n' "$status" >&2
+        exec /usr/local/bin/agent-session "$mode"
+      fi
+
+  - path: /usr/local/bin/ssh-agent-session
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+
+      shutdown_guest() {
+        trap - EXIT HUP TERM
+        sudo systemctl poweroff --no-block >/dev/null 2>&1 || true
+      }
+      trap shutdown_guest EXIT HUP TERM
+
+      /usr/local/bin/agent-session "$@"
+
+  - path: /etc/xdg/foot/foot.ini
+    permissions: "0644"
+    content: |
+      [main]
+      font=monospace:size=12
+      term=xterm-256color
+
+  - path: /usr/local/sbin/provision-agent-image
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      install -d -o agent -g agent /home/agent /home/agent/.local
+      install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bash_profile /home/agent/.bash_profile
+      install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bashrc /home/agent/.bashrc
+      sudo -u agent env HOME=/home/agent npm config set prefix /home/agent/.local
+      sudo -u agent env HOME=/home/agent npm install -g @openai/codex
+      sudo -u agent env HOME=/home/agent curl -fsSL https://claude.ai/install.sh -o /tmp/install-claude.sh
+      sudo -u agent env HOME=/home/agent bash /tmp/install-claude.sh
+      rm -f /tmp/install-claude.sh
+      test -x /home/agent/.local/bin/codex
+      test -x /home/agent/.local/bin/claude
+      sudo -u agent env HOME=/home/agent /home/agent/.local/bin/codex --version
+      sudo -u agent env HOME=/home/agent /home/agent/.local/bin/claude --version
+      systemctl enable prepare-workspace.service
+      systemctl set-default multi-user.target
+      touch /etc/cloud/cloud-init.disabled
+      touch /var/lib/arch-agent-image-ready
+      printf '%s\n' ARCH_AGENT_IMAGE_READY >/dev/ttyS0
+
+  - path: /usr/local/share/arch-agent/bash_profile
+    permissions: "0644"
+    content: |
+      export PATH="$HOME/.local/bin:$PATH"
+      if [[ "$(tty 2>/dev/null)" == /dev/tty1 ]]; then
+        product_name="$(</sys/class/dmi/id/product_name)"
+        if [[ "$product_name" == arch-agent-gtk-* ]]; then
+          exec /usr/local/bin/graphical-agent-session "${product_name#arch-agent-gtk-}"
+        fi
+      fi
+
+  - path: /usr/local/share/arch-agent/bashrc
+    permissions: "0644"
+    content: |
+      export PATH="$HOME/.local/bin:$PATH"
+      alias ll='ls -alF'
+      cd /workspace/projects 2>/dev/null || true
+
+runcmd:
+  - [/usr/local/sbin/provision-agent-image]
+
+power_state:
+  mode: poweroff
+  message: Agent image provisioning complete
+  timeout: 30
+  condition: [test, -f, /var/lib/arch-agent-image-ready]

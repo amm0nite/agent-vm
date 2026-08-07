@@ -1,0 +1,132 @@
+# Disposable Arch Agent VM
+
+A fresh Arch Linux operating system on every boot, with a persistent workspace
+disk. The VM starts headlessly, mounts the workspace at `/workspace`, and opens
+Codex, Claude Code, or a regular shell through SSH in the host terminal.
+
+The operating-system overlay is deleted when QEMU exits. Projects and agent
+login state survive in `images/workspace.qcow2`.
+
+## Host requirements
+
+- `qemu-system-x86_64` and `qemu-img`
+- `ssh` and `ssh-keygen` from OpenSSH
+- `cloud-localds` from `cloud-image-utils` (only while building)
+- `curl`, `sha256sum`, and `jq`
+- KVM access is optional but strongly recommended
+
+On Arch Linux:
+
+```console
+sudo pacman -S qemu-desktop cloud-image-utils curl jq
+```
+
+On Debian or Ubuntu:
+
+```console
+sudo apt install qemu-system-x86 qemu-utils cloud-image-utils curl jq
+```
+
+## Build once
+
+The builder downloads Arch's official cloud image, verifies its published
+SHA-256 checksum, installs development tools plus both agents, then saves the
+prepared immutable base image.
+
+Codex is installed from its npm package. Claude Code uses Anthropic's
+recommended native Linux installer.
+
+```console
+./build-image.sh
+```
+
+Building needs network access and several minutes. Use `./build-image.sh
+--force` to replace an existing prepared image.
+
+Every build saves the builder output and the VM's serial/cloud-init console in
+`logs/`. The most recent log is always available at:
+
+```console
+less logs/latest-build.log
+```
+
+To watch it from a second terminal while building:
+
+```console
+tail -f logs/latest-build.log
+```
+
+For shell command tracing in addition to the normal console output:
+
+```console
+ARCH_AGENT_TRACE=1 ./build-image.sh
+```
+
+The builder only accepts the image after cloud-init emits an explicit success
+marker. Interrupting or closing QEMU cannot promote a partially provisioned
+disk to the reusable base image.
+
+## Run
+
+```console
+./run.sh codex
+./run.sh claude
+./run.sh shell
+```
+
+On the first Claude or Codex launch, authenticate inside the VM. The resulting
+agent state is stored on the persistent workspace and reused on later boots.
+
+Home-directory persistence is configured in `config/persist-home.conf`. Each
+entry declares a `dir`, `file`, or `json`, followed by its path relative to
+`/home/agent` and its storage path relative to `/workspace`. Changes take
+effect after rebuilding the base image. SSH persistence is included as a
+commented opt-in example.
+
+The image build creates a dedicated SSH key. The first run creates a sparse
+64 GB workspace disk, which consumes space only as data is written. Override
+defaults with environment variables:
+
+```console
+ARCH_AGENT_WORKSPACE_SIZE=100G ./run.sh shell
+ARCH_AGENT_MEMORY=16384 ARCH_AGENT_CPUS=8 ./run.sh codex
+ARCH_AGENT_SSH_PORT=2223 ./run.sh claude
+```
+
+The workspace size variable only applies when the disk is first created.
+
+To permanently wipe all projects, agent logins, and other persisted home state:
+
+```console
+./wipe-workspace.sh
+```
+
+The command refuses to run while the VM is using the workspace and asks for
+confirmation. For non-interactive use, pass `--force`.
+
+Leaving SSH—for example with `exit`, `Ctrl+D`, a lost connection, or closing
+the host terminal—makes `run.sh` request a clean guest poweroff. If that times
+out, it terminates QEMU as a fallback. In both cases it deletes the disposable
+OS overlay and keeps the workspace disk.
+
+For a troubleshooting console, retain the SSH session while also opening the
+minimal Cage/Foot display:
+
+```console
+ARCH_AGENT_DISPLAY=gtk ./run.sh shell
+```
+
+## Persistence and security
+
+- `/workspace/projects` contains persistent work.
+- `/workspace/.agent-state` contains persistent Codex and Claude login state.
+- Selected home paths such as GitHub CLI state, `.gitconfig`, and shell history
+  are declared in `config/persist-home.conf`.
+- Everything else is discarded after shutdown.
+- No host directory is shared with the VM.
+- The agents launch with permission checks disabled. Only place data on the
+  workspace disk that the agents are allowed to modify or delete.
+
+To reset only the OS, close the VM and start it again. Use
+`./wipe-workspace.sh` to reset the workspace; the next run creates a new blank
+disk.
