@@ -10,17 +10,47 @@ ssh_key="$image_dir/agent-ssh-key"
 workspace_size="${ARCH_AGENT_WORKSPACE_SIZE:-64G}"
 ssh_port="${ARCH_AGENT_SSH_PORT:-2222}"
 display_mode="${ARCH_AGENT_DISPLAY:-none}"
-mode="${1:-shell}"
+mode=shell
+mode_set=false
+git_ssh_key=""
+
+usage() {
+  printf 'usage: %s [--git-ssh-key PATH] [codex|claude|shell]\n' "$0"
+}
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
 
-case "$mode" in
-  codex|claude|shell) ;;
-  *) die "usage: $0 [codex|claude|shell]" ;;
-esac
+while (( $# > 0 )); do
+  case "$1" in
+    --git-ssh-key)
+      (( $# >= 2 )) || die "--git-ssh-key requires a private key path"
+      git_ssh_key="$2"
+      shift 2
+      ;;
+    --git-ssh-key=*)
+      git_ssh_key="${1#*=}"
+      [[ -n "$git_ssh_key" ]] || die "--git-ssh-key requires a private key path"
+      shift
+      ;;
+    codex|claude|shell)
+      [[ "$mode_set" == false ]] || die "only one startup mode may be specified"
+      mode="$1"
+      mode_set=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      die "unknown argument: $1"
+      ;;
+  esac
+done
 
 case "$display_mode" in
   none)
@@ -40,6 +70,12 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || die "missing qemu-system-x86_64
 command -v jq >/dev/null 2>&1 || die "missing jq; install jq"
 command -v ssh >/dev/null 2>&1 || die "missing ssh; install openssh-client"
 command -v flock >/dev/null 2>&1 || die "missing flock; install util-linux"
+if [[ -n "$git_ssh_key" ]]; then
+  command -v ssh-agent >/dev/null 2>&1 || die "missing ssh-agent; install openssh-client"
+  command -v ssh-add >/dev/null 2>&1 || die "missing ssh-add; install openssh-client"
+  [[ -f "$git_ssh_key" && -r "$git_ssh_key" ]] || \
+    die "Git SSH private key is not a readable file: $git_ssh_key"
+fi
 [[ -r "$base_image" ]] || die "base image not found; run $script_dir/build-image.sh first"
 [[ -r "$ssh_key" ]] || die "SSH key not found; rebuild with $script_dir/build-image.sh --force"
 
@@ -62,6 +98,9 @@ pid_file="$runtime_dir/qemu.pid"
 serial_log="$runtime_dir/serial.log"
 known_hosts="$runtime_dir/known_hosts"
 qemu_pid=""
+git_agent_pid=""
+git_agent_socket=""
+git_agent_log=""
 ssh_ready=false
 cleanup_started=false
 
@@ -112,7 +151,14 @@ cleanup() {
     fi
   fi
 
-  rm -f -- "$overlay_image" "$pid_file" "$serial_log" "$known_hosts"
+  if [[ -n "$git_agent_pid" ]] && kill -0 "$git_agent_pid" 2>/dev/null; then
+    kill -TERM "$git_agent_pid" 2>/dev/null || true
+    wait "$git_agent_pid" 2>/dev/null || true
+  fi
+
+  rm -f -- \
+    "$overlay_image" "$pid_file" "$serial_log" "$known_hosts" \
+    "$git_agent_socket" "$git_agent_log"
   rmdir -- "$runtime_dir" 2>/dev/null || true
   exit "$status"
 }
@@ -121,6 +167,32 @@ trap 'cleanup $?' EXIT
 trap 'cleanup 129' HUP
 trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
+
+session_ssh_options=(-tt)
+if [[ -n "$git_ssh_key" ]]; then
+  git_agent_socket="$runtime_dir/git-agent.sock"
+  git_agent_log="$runtime_dir/git-agent.log"
+  SSH_AUTH_SOCK="$git_agent_socket" ssh-agent -D -a "$git_agent_socket" \
+    >"$git_agent_log" 2>&1 &
+  git_agent_pid=$!
+
+  for (( attempt = 1; attempt <= 50; attempt++ )); do
+    [[ -S "$git_agent_socket" ]] && break
+    kill -0 "$git_agent_pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if [[ ! -S "$git_agent_socket" ]]; then
+    sed -n '1,20p' "$git_agent_log" >&2 || true
+    die "temporary Git SSH agent failed to start"
+  fi
+
+  printf 'Loading the Git SSH key into a temporary agent...\n'
+  SSH_AUTH_SOCK="$git_agent_socket" ssh-add "$git_ssh_key" || \
+    die "could not load the Git SSH private key"
+  export SSH_AUTH_SOCK="$git_agent_socket"
+  session_ssh_options=(-A -tt)
+  printf 'Git SSH agent forwarding enabled for this VM session.\n'
+fi
 
 qemu-img create \
   -f qcow2 \
@@ -182,7 +254,7 @@ fi
 
 printf 'Connected. Leaving SSH will stop the VM and discard its OS overlay.\n\n'
 set +e
-ssh -tt "${ssh_options[@]}" \
+ssh "${session_ssh_options[@]}" "${ssh_options[@]}" \
   agent@127.0.0.1 \
   env "PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin" \
   /usr/local/bin/ssh-agent-session "$mode"

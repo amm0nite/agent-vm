@@ -74,14 +74,44 @@ disk to the reusable base image.
 ./run.sh shell
 ```
 
+To let Git inside the VM clone and push over SSH, forward one dedicated key
+from the host:
+
+```console
+./run.sh --git-ssh-key ~/.ssh/agent-github codex
+```
+
+The matching public key must be registered with the Git host. `run.sh` starts
+a temporary, isolated `ssh-agent`, loads only the selected private key, and
+forwards that agent to the VM for the interactive session. The private key is
+never copied to the VM or the workspace disk. If the key is encrypted,
+`ssh-add` asks for its passphrase before the VM starts.
+
+On the first connection to a Git host, SSH may ask you to confirm its host key.
+Set the persistent commit identity once inside the VM:
+
+```console
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
+The resulting `.gitconfig` is stored on the persistent workspace. You can
+inspect the forwarded identity and test GitHub access from the VM with:
+
+```console
+ssh-add -l
+ssh -T git@github.com
+```
+
 On the first Claude or Codex launch, authenticate inside the VM. The resulting
 agent state is stored on the persistent workspace and reused on later boots.
 
 Home-directory persistence is configured in `config/persist-home.conf`. Each
 entry declares a `dir`, `file`, or `json`, followed by its path relative to
 `/home/agent` and its storage path relative to `/workspace`. Changes take
-effect after rebuilding the base image. SSH persistence is included as a
-commented opt-in example.
+effect after rebuilding the base image. SSH `known_hosts` entries persist by
+default, while private keys and other SSH state remain ephemeral. Persisting
+the entire `.ssh` directory is included as a commented opt-in example.
 
 The image build creates a dedicated SSH key. The first run creates a sparse
 64 GB workspace disk, which consumes space only as data is written. Override
@@ -120,10 +150,13 @@ ARCH_AGENT_DISPLAY=gtk ./run.sh shell
 
 - `/workspace/projects` contains persistent work.
 - `/workspace/.agent-state` contains persistent Codex and Claude login state.
-- Selected home paths such as GitHub CLI state, `.gitconfig`, and shell history
-  are declared in `config/persist-home.conf`.
+- Selected home paths such as GitHub CLI state, `.gitconfig`, shell history,
+  and SSH `known_hosts` are declared in `config/persist-home.conf`.
 - Everything else is discarded after shutdown.
 - No host directory is shared with the VM.
+- A key passed with `--git-ssh-key` remains on the host, but the VM can request
+  signatures from it until the session ends. Prefer a dedicated, narrowly
+  authorized Git key rather than forwarding a general-purpose identity.
 - The agents launch with permission checks disabled. Only place data on the
   workspace disk that the agents are allowed to modify or delete.
 
