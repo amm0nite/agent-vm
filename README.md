@@ -33,8 +33,8 @@ The builder downloads Arch's official cloud image, verifies its published
 SHA-256 checksum, installs development tools plus both agents, then saves the
 prepared immutable base image.
 
-Codex is installed from its npm package. Claude Code uses Anthropic's
-recommended native Linux installer.
+Codex is installed from its npm package, with Bubblewrap available for its
+sandbox. Claude Code uses Anthropic's recommended native Linux installer.
 
 ```console
 ./build-image.sh
