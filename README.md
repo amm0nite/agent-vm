@@ -74,6 +74,22 @@ disk to the reusable base image.
 ./run.sh shell
 ```
 
+To expose a TCP service from the VM through the SSH session on the same
+localhost port, pass `--forward`. For example, this makes guest port 8080
+available at `http://127.0.0.1:8080` on the host:
+
+```console
+./run.sh --forward 8080 codex
+```
+
+The guest service can listen on `127.0.0.1:8080` or `0.0.0.0:8080`. The host
+listener is restricted to `127.0.0.1`, so it is not exposed to the local
+network. Repeat the option to forward multiple ports:
+
+```console
+./run.sh --forward 3000 --forward 8080 codex
+```
+
 To let Git inside the VM clone and push over SSH, forward one dedicated key
 from the host:
 
@@ -154,6 +170,8 @@ ARCH_AGENT_DISPLAY=gtk ./run.sh shell
   and SSH `known_hosts` are declared in `config/persist-home.conf`.
 - Everything else is discarded after shutdown.
 - No host directory is shared with the VM.
+- Ports passed with `--forward` are carried through SSH and reachable only
+  through the host's loopback interface for the lifetime of the VM session.
 - A key passed with `--git-ssh-key` remains on the host, but the VM can request
   signatures from it until the session ends. Prefer a dedicated, narrowly
   authorized Git key rather than forwarding a general-purpose identity.

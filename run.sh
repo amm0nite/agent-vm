@@ -13,9 +13,10 @@ display_mode="${ARCH_AGENT_DISPLAY:-none}"
 mode=shell
 mode_set=false
 git_ssh_key=""
+forwarded_ports=()
 
 usage() {
-  printf 'usage: %s [--git-ssh-key PATH] [codex|claude|shell]\n' "$0"
+  printf 'usage: %s [--git-ssh-key PATH] [--forward PORT]... [codex|claude|shell]\n' "$0"
 }
 
 die() {
@@ -33,6 +34,17 @@ while (( $# > 0 )); do
     --git-ssh-key=*)
       git_ssh_key="${1#*=}"
       [[ -n "$git_ssh_key" ]] || die "--git-ssh-key requires a private key path"
+      shift
+      ;;
+    --forward)
+      (( $# >= 2 )) || die "--forward requires a TCP port"
+      forwarded_ports+=("$2")
+      shift 2
+      ;;
+    --forward=*)
+      forward_port="${1#*=}"
+      [[ -n "$forward_port" ]] || die "--forward requires a TCP port"
+      forwarded_ports+=("$forward_port")
       shift
       ;;
     codex|claude|shell)
@@ -62,8 +74,23 @@ case "$display_mode" in
   *) die "ARCH_AGENT_DISPLAY must be 'none' or 'gtk'" ;;
 esac
 
-[[ "$ssh_port" =~ ^[0-9]+$ ]] && (( ssh_port >= 1 && ssh_port <= 65535 )) || \
+[[ "$ssh_port" =~ ^(0|[1-9][0-9]*)$ ]] && \
+  (( ssh_port >= 1 && ssh_port <= 65535 )) || \
   die "ARCH_AGENT_SSH_PORT must be a port number between 1 and 65535"
+
+for (( port_index = 0; port_index < ${#forwarded_ports[@]}; port_index++ )); do
+  forward_port="${forwarded_ports[port_index]}"
+  [[ "$forward_port" =~ ^(0|[1-9][0-9]*)$ ]] && \
+    (( forward_port >= 1 && forward_port <= 65535 )) || \
+    die "--forward must be a TCP port number between 1 and 65535: $forward_port"
+  [[ "$forward_port" != "$ssh_port" ]] || \
+    die "--forward port $forward_port conflicts with the VM SSH port"
+
+  for (( previous_index = 0; previous_index < port_index; previous_index++ )); do
+    [[ "$forward_port" != "${forwarded_ports[previous_index]}" ]] || \
+      die "--forward port $forward_port was specified more than once"
+  done
+done
 
 command -v qemu-img >/dev/null 2>&1 || die "missing qemu-img; install QEMU"
 command -v qemu-system-x86_64 >/dev/null 2>&1 || die "missing qemu-system-x86_64; install QEMU"
@@ -168,7 +195,12 @@ trap 'cleanup 129' HUP
 trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
 
-session_ssh_options=(-tt)
+session_ssh_options=(-tt -o ExitOnForwardFailure=yes)
+for forward_port in "${forwarded_ports[@]}"; do
+  session_ssh_options+=(
+    -L "127.0.0.1:$forward_port:127.0.0.1:$forward_port"
+  )
+done
 if [[ -n "$git_ssh_key" ]]; then
   git_agent_socket="$runtime_dir/git-agent.sock"
   git_agent_log="$runtime_dir/git-agent.log"
@@ -190,7 +222,7 @@ if [[ -n "$git_ssh_key" ]]; then
   SSH_AUTH_SOCK="$git_agent_socket" ssh-add "$git_ssh_key" || \
     die "could not load the Git SSH private key"
   export SSH_AUTH_SOCK="$git_agent_socket"
-  session_ssh_options=(-A -tt)
+  session_ssh_options=(-A "${session_ssh_options[@]}")
   printf 'Git SSH agent forwarding enabled for this VM session.\n'
 fi
 
@@ -207,6 +239,9 @@ fi
 
 printf 'Starting a disposable Arch OS with persistent workspace.\n'
 printf 'Mode: %s\nWorkspace: %s\nSSH: 127.0.0.1:%s\n' "$mode" "$workspace_image" "$ssh_port"
+for forward_port in "${forwarded_ports[@]}"; do
+  printf 'TCP forward: 127.0.0.1:%s -> guest:%s\n' "$forward_port" "$forward_port"
+done
 
 qemu-system-x86_64 \
   "${acceleration[@]}" \
