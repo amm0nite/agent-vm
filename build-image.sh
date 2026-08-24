@@ -96,11 +96,13 @@ printf 'Downloading the official Arch cloud image...\n'
 curl --fail --location --retry 3 --output "$upstream_checksum" "$image_url.SHA256"
 
 if ! (cd "$image_dir" && sha256sum --check --status "$(basename -- "$upstream_checksum")"); then
-  if ! curl --fail --location --retry 3 --continue-at - --output "$upstream_image" "$image_url"; then
-    printf 'A partial image could not be resumed; downloading it again...\n'
+  if [[ -e "$upstream_image" ]]; then
+    printf 'Cached image does not match the current checksum; downloading a fresh copy...\n'
     rm -f -- "$upstream_image"
-    curl --fail --location --retry 3 --output "$upstream_image" "$image_url"
+  else
+    printf 'Downloading the Arch cloud image...\n'
   fi
+  curl --fail --location --retry 3 --output "$upstream_image" "$image_url"
 fi
 
 printf 'Verifying image checksum...\n'
