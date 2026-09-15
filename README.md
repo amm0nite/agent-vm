@@ -162,6 +162,15 @@ the host terminal—makes `run.sh` request a clean guest poweroff. If that times
 out, it terminates QEMU as a fallback. In both cases it deletes the disposable
 OS overlay and keeps the workspace disk.
 
+Sessions start only after workspace preparation succeeds and `/workspace` is
+mounted. The shutdown SSH command has a five-second timeout (with forced
+termination after another two seconds), followed by the QEMU shutdown fallback.
+SSH liveness checks also detect an unresponsive connection.
+
+On a failed run or forced shutdown, the full VM serial log is saved as
+`logs/run-XXXXXXXX.log`, and its path is printed. If archiving fails, the log
+is kept in the temporary runtime directory instead.
+
 For a troubleshooting console, retain the SSH session while also opening the
 minimal Cage/Foot display:
 

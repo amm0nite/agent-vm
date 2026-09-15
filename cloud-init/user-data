@@ -163,6 +163,11 @@ write_files:
 
       export PATH="/home/agent/.local/bin:$PATH"
 
+      if ! systemctl is-active --quiet prepare-workspace.service || ! mountpoint -q /workspace; then
+        printf 'Workspace preparation failed; refusing to start a session.\n' >&2
+        exit 1
+      fi
+
       mode="${1:-}"
       if [[ -z "$mode" && -r /sys/class/dmi/id/product_name ]]; then
         product_name="$(</sys/class/dmi/id/product_name)"

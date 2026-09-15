@@ -97,6 +97,7 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || die "missing qemu-system-x86_64
 command -v jq >/dev/null 2>&1 || die "missing jq; install jq"
 command -v ssh >/dev/null 2>&1 || die "missing ssh; install openssh-client"
 command -v flock >/dev/null 2>&1 || die "missing flock; install util-linux"
+command -v timeout >/dev/null 2>&1 || die "missing timeout; install coreutils"
 if [[ -n "$git_ssh_key" ]]; then
   command -v ssh-agent >/dev/null 2>&1 || die "missing ssh-agent; install openssh-client"
   command -v ssh-add >/dev/null 2>&1 || die "missing ssh-add; install openssh-client"
@@ -138,6 +139,8 @@ ssh_common_options=(
   -o IdentityAgent=none
   -o ControlMaster=no
   -o ControlPath=none
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=3
   -o BatchMode=yes
   -o IdentitiesOnly=yes
   -o StrictHostKeyChecking=accept-new
@@ -170,7 +173,7 @@ cleanup() {
 
     # Prefer a clean guest shutdown so the persistent ext4 workspace unmounts.
     if [[ "$ssh_ready" == true ]]; then
-      ssh "${ssh_options[@]}" \
+      timeout --kill-after=2s 5s ssh "${ssh_options[@]}" \
         -o ConnectTimeout=2 \
         agent@127.0.0.1 \
         'sudo systemctl poweroff' </dev/null >/dev/null 2>&1 || true
@@ -178,6 +181,7 @@ cleanup() {
 
     if ! wait_for_qemu_exit 50; then
       printf 'Guest did not power off in time; stopping QEMU.\n' >&2
+      (( status != 0 )) || status=1
       kill -TERM "$qemu_pid" 2>/dev/null || true
       wait_for_qemu_exit 25 || kill -KILL "$qemu_pid" 2>/dev/null || true
     fi
@@ -188,8 +192,22 @@ cleanup() {
     wait "$git_agent_pid" 2>/dev/null || true
   fi
 
+  if (( status != 0 )) && [[ -f "$serial_log" ]]; then
+    local saved_log=""
+    if mkdir -p "$script_dir/logs" && \
+        saved_log="$(mktemp "$script_dir/logs/run-XXXXXXXX.log")" && \
+        cp -- "$serial_log" "$saved_log"; then
+      printf 'VM serial log: %s\n' "$saved_log" >&2
+      rm -f -- "$serial_log"
+    else
+      printf 'Could not archive VM serial log; retained at: %s\n' "$serial_log" >&2
+    fi
+  else
+    rm -f -- "$serial_log"
+  fi
+
   rm -f -- \
-    "$overlay_image" "$pid_file" "$serial_log" "$known_hosts" \
+    "$overlay_image" "$pid_file" "$known_hosts" \
     "$git_agent_socket" "$git_agent_log"
   rmdir -- "$runtime_dir" 2>/dev/null || true
   exit "$status"
@@ -290,6 +308,12 @@ printf '\n'
 if [[ "$ssh_ready" != true ]]; then
   tail -n 40 "$serial_log" >&2 || true
   die "timed out waiting for SSH on port $ssh_port"
+fi
+
+if ! timeout --kill-after=2s 5s ssh "${ssh_options[@]}" \
+    -o ConnectTimeout=2 agent@127.0.0.1 \
+    'systemctl is-active --quiet prepare-workspace.service && mountpoint -q /workspace'; then
+  die "workspace preparation failed; refusing to start a session (see the retained serial log)"
 fi
 
 printf 'Connected. Leaving SSH will stop the VM and discard its OS overlay.\n\n'
