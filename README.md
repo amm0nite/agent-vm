@@ -43,6 +43,9 @@ sandbox. Claude Code uses Anthropic's recommended native Linux installer.
 Building needs network access and several minutes. Use `./build-image.sh
 --force` to replace an existing prepared image.
 
+Only one image build can run at a time. A second builder exits before changing
+logs or image artifacts.
+
 Every build saves the builder output and the VM's serial/cloud-init console in
 `logs/`. The most recent log is always available at:
 
@@ -102,6 +105,10 @@ a temporary, isolated `ssh-agent`, loads only the selected private key, and
 forwards that agent to the VM for the interactive session. The private key is
 never copied to the VM or the workspace disk. If the key is encrypted,
 `ssh-add` asks for its passphrase before the VM starts.
+
+VM SSH connections ignore host SSH configuration and connection sharing.
+Agent forwarding is disabled except for the interactive session when
+`--git-ssh-key` is supplied; readiness and shutdown connections never forward it.
 
 On the first connection to a Git host, SSH may ask you to confirm its host key.
 Set the persistent commit identity once inside the VM:

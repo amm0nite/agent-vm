@@ -132,7 +132,12 @@ ssh_ready=false
 cleanup_started=false
 
 ssh_common_options=(
+  -F /dev/null
   -i "$ssh_key"
+  -o ForwardAgent=no
+  -o IdentityAgent=none
+  -o ControlMaster=no
+  -o ControlPath=none
   -o BatchMode=yes
   -o IdentitiesOnly=yes
   -o StrictHostKeyChecking=accept-new

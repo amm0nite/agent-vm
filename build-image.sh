@@ -13,6 +13,18 @@ ssh_key="$image_dir/agent-ssh-key"
 persist_home_config="$script_dir/config/persist-home.conf"
 image_url="https://fastly.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
 
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+# Keep the lock file in place: all builders must lock the same inode.
+# Lock before touching logs, keys, downloads, or build artifacts.
+command -v flock >/dev/null 2>&1 || die "missing flock; install util-linux"
+mkdir -p "$image_dir"
+exec 9>"$image_dir/build.lock"
+flock -n 9 || die "another image build is already in progress"
+
 mkdir -p "$log_dir"
 log_file="$log_dir/build-$(date -u +%Y%m%dT%H%M%SZ).log"
 ln -sfn "$(basename -- "$log_file")" "$log_dir/latest-build.log"
@@ -37,11 +49,6 @@ if [[ "${ARCH_AGENT_TRACE:-0}" == 1 ]]; then
   export PS4='+ ${BASH_SOURCE}:${LINENO}: '
   set -x
 fi
-
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "missing command '$1' ($2)"
