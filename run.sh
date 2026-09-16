@@ -245,7 +245,9 @@ if [[ -n "$git_ssh_key" ]]; then
   SSH_AUTH_SOCK="$git_agent_socket" ssh-add "$git_ssh_key" || \
     die "could not load the Git SSH private key"
   export SSH_AUTH_SOCK="$git_agent_socket"
-  session_ssh_options=(-A "${session_ssh_options[@]}")
+  # Override IdentityAgent=none before the common options: -A alone cannot
+  # forward an agent when SSH has disabled access to its socket.
+  session_ssh_options=(-A -o "IdentityAgent=$git_agent_socket" "${session_ssh_options[@]}")
   printf 'Git SSH agent forwarding enabled for this VM session.\n'
 fi
 
