@@ -26,9 +26,11 @@ packages:
   - foot
   - git
   - github-cli
+  - go
   - jq
   - less
   - man-db
+  - nano
   - neovim
   - nodejs
   - npm
