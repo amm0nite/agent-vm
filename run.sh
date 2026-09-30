@@ -281,7 +281,7 @@ qemu-system-x86_64 \
   -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$ssh_port-:22" \
   -drive "if=none,id=os,file=$overlay_image,format=qcow2,discard=unmap" \
   -device virtio-blk-pci,drive=os,serial=AI_OS \
-  -drive "if=none,id=workspace,file=$workspace_image,format=qcow2,cache=writeback" \
+  -drive "if=none,id=workspace,file=$workspace_image,format=qcow2,cache=writeback,discard=unmap" \
   -device virtio-blk-pci,drive=workspace,serial=AI_WORKSPACE
 
 qemu_pid="$(<"$pid_file")"
@@ -316,6 +316,16 @@ if ! timeout --kill-after=2s 5s ssh "${ssh_options[@]}" \
     -o ConnectTimeout=2 agent@127.0.0.1 \
     'systemctl is-active --quiet prepare-workspace.service && mountpoint -q /workspace'; then
   die "workspace preparation failed; refusing to start a session (see the retained serial log)"
+fi
+
+# Reclaim host storage occupied by blocks deleted during earlier sessions.
+# This also handles base images built before shutdown trimming was introduced.
+if ! trim_output="$(ssh "${ssh_options[@]}" \
+    agent@127.0.0.1 \
+    'sudo fstrim --verbose /workspace' </dev/null 2>&1)"; then
+  printf 'Warning: could not reclaim unused workspace storage: %s\n' "$trim_output" >&2
+elif [[ -n "$trim_output" ]]; then
+  printf '%s\n' "$trim_output"
 fi
 
 printf 'Connected. Leaving SSH will stop the VM and discard its OS overlay.\n\n'

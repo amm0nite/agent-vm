@@ -160,7 +160,9 @@ confirmation. For non-interactive use, pass `--force`.
 Leaving SSH—for example with `exit`, `Ctrl+D`, a lost connection, or closing
 the host terminal—makes `run.sh` request a clean guest poweroff. If that times
 out, it terminates QEMU as a fallback. In both cases it deletes the disposable
-OS overlay and keeps the workspace disk.
+OS overlay and keeps the workspace disk. Unused workspace blocks are returned
+to the host at session startup and during clean shutdown, keeping the sparse
+workspace image from retaining space previously occupied by deleted files.
 
 Sessions start only after workspace preparation succeeds and `/workspace` is
 mounted. The shutdown SSH command has a five-second timeout (with forced

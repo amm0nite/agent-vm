@@ -66,6 +66,7 @@ write_files:
       Type=oneshot
       ExecStart=/usr/local/sbin/prepare-ai-workspace
       RemainAfterExit=yes
+      ExecStop=-/usr/bin/fstrim /workspace
       ExecStop=-/usr/bin/umount /workspace
 
       [Install]
