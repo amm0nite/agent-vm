@@ -43,6 +43,14 @@ sandbox. Claude Code uses Anthropic's recommended native Linux installer.
 Building needs network access and several minutes. Use `./build-image.sh
 --force` to replace an existing prepared image.
 
+The system disk defaults to a sparse 40 GB image, leaving room for larger
+development toolchains such as the Android SDK. Override its virtual size when
+building with `ARCH_AGENT_SYSTEM_SIZE`:
+
+```console
+ARCH_AGENT_SYSTEM_SIZE=64G ./build-image.sh --force
+```
+
 Only one image build can run at a time. A second builder exits before changing
 logs or image artifacts.
 

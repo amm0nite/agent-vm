@@ -12,6 +12,7 @@ rendered_user_data="$image_dir/cloud-init-user-data.build"
 ssh_key="$image_dir/agent-ssh-key"
 persist_home_config="$script_dir/config/persist-home.conf"
 image_url="https://fastly.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
+system_size="${ARCH_AGENT_SYSTEM_SIZE:-40G}"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -118,7 +119,7 @@ printf 'Verifying image checksum...\n'
 build_image="$image_dir/arch-agent-base.build.qcow2"
 rm -f -- "$build_image" "$seed_image" "$rendered_user_data"
 cp --reflink=auto -- "$upstream_image" "$build_image"
-qemu-img resize "$build_image" +8G
+qemu-img resize "$build_image" "$system_size"
 sed \
   -e "s|@@ARCH_AGENT_SSH_PUBLIC_KEY@@|$ssh_public_key|" \
   -e "s|@@ARCH_AGENT_PERSIST_HOME_CONFIG@@|$persist_home_config_base64|" \
