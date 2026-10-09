@@ -20,6 +20,8 @@ packages:
   - cage
   - curl
   - dbus
+  - docker
+  - docker-compose
   - e2fsprogs
   - fd
   - fzf
@@ -245,6 +247,14 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
+
+      usermod -aG docker agent
+      # Package upgrades may replace the running kernel's modules. Start Docker
+      # on the next boot, when the installed kernel and modules match.
+      systemctl enable docker.service
+      sudo -u agent docker --version
+      sudo -u agent docker compose version
+      sudo -u agent docker-compose version
 
       install -d -o agent -g agent /home/agent /home/agent/.local
       install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bash_profile /home/agent/.bash_profile

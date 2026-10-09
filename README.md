@@ -36,6 +36,12 @@ prepared immutable base image.
 Codex is installed from its npm package, with Bubblewrap available for its
 sandbox. Claude Code uses Anthropic's recommended native Linux installer.
 
+Docker and Docker Compose are installed, and Docker starts automatically on
+boot. The `agent` user belongs to the `docker` group, so `docker`,
+`docker compose`, and `docker-compose` work without sudo. Docker images,
+containers, and volumes use the disposable OS disk and are discarded after
+shutdown; bind mount project directories under `/workspace` for persistent data.
+
 ```console
 ./build-image.sh
 ```
