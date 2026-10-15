@@ -235,6 +235,90 @@ write_files:
 
       /usr/local/bin/agent-session "$@"
 
+  - path: /etc/systemd/system/agent-authorized-keys.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Authorize SSH keys passed by the VM host
+      ConditionCredential=arch-agent.authorized_keys
+      After=prepare-workspace.service
+      Before=sshd.service
+
+      [Service]
+      Type=oneshot
+      LoadCredential=arch-agent.authorized_keys
+      ExecStart=/usr/local/sbin/install-agent-authorized-keys
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/sbin/install-agent-authorized-keys
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # The OS is discarded after shutdown, so keys are appended once per boot.
+      authorized_keys=/home/agent/.ssh/authorized_keys
+      install -d -o agent -g agent -m 0700 /home/agent/.ssh
+      {
+        printf '# Keys passed by the VM host\n'
+        cat "$CREDENTIALS_DIRECTORY/arch-agent.authorized_keys"
+        printf '\n'
+      } >>"$authorized_keys"
+      chown agent:agent "$authorized_keys"
+      chmod 600 "$authorized_keys"
+
+  - path: /etc/systemd/system/agent-autostart.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Coding agent tmux session
+      Requires=prepare-workspace.service
+      After=prepare-workspace.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=forking
+      User=agent
+      Environment=TERM=xterm-256color
+      Environment=SSH_AUTH_SOCK=/home/agent/.ssh/agent.sock
+      ExecCondition=/usr/local/bin/agent-autostart --check
+      ExecStart=/usr/local/bin/agent-autostart
+      Restart=always
+      RestartSec=2
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/bin/agent-autostart
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # Only VMs started as a service (Docker mode) run the agent at boot.
+      # Interactive run.sh sessions start their agent through SSH instead.
+      product_name="$(</sys/class/dmi/id/product_name)"
+      case "$product_name" in
+        arch-agent-*-service-*) mode="${product_name##*-service-}" ;;
+        *) exit 1 ;;
+      esac
+      [[ "${1:-}" != --check ]] || exit 0
+
+      exec tmux new-session -d -s agent -c /workspace/projects \
+        /usr/local/bin/agent-session "$mode"
+
+  - path: /etc/ssh/sshrc
+    permissions: "0644"
+    content: |
+      # Keep a stable path to the most recently forwarded SSH agent, so the
+      # agent tmux session started at boot can use keys forwarded by ssh -A.
+      if [ -n "$SSH_AUTH_SOCK" ] && [ -d "$HOME/.ssh" ]; then
+        ln -sfn "$SSH_AUTH_SOCK" "$HOME/.ssh/agent.sock"
+      fi
+
   - path: /etc/xdg/foot/foot.ini
     permissions: "0644"
     content: |
@@ -268,7 +352,7 @@ write_files:
       test -x /home/agent/.local/bin/claude
       sudo -u agent env HOME=/home/agent /home/agent/.local/bin/codex --version
       sudo -u agent env HOME=/home/agent /home/agent/.local/bin/claude --version
-      systemctl enable prepare-workspace.service
+      systemctl enable prepare-workspace.service agent-authorized-keys.service agent-autostart.service
       systemctl set-default multi-user.target
       touch /etc/cloud/cloud-init.disabled
       touch /var/lib/arch-agent-image-ready

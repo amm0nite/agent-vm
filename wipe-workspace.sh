@@ -2,14 +2,9 @@
 set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-image_dir="$script_dir/images"
-workspace_image="$image_dir/workspace.qcow2"
-workspace_lock="$image_dir/workspace.lock"
-
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
+# shellcheck source=lib/vm.sh
+source "$script_dir/lib/vm.sh"
+workspace_image="$vm_workspace_image"
 
 force=false
 case "${1:-}" in
@@ -18,10 +13,8 @@ case "${1:-}" in
   *) die "usage: $0 [--force]" ;;
 esac
 
-command -v flock >/dev/null 2>&1 || die "missing flock; install util-linux"
-mkdir -p "$image_dir"
-exec 9>"$workspace_lock"
-flock -n 9 || die "the VM is running or the persistent workspace is otherwise in use"
+vm_require_command flock "install util-linux"
+vm_lock_workspace "the VM is running or the persistent workspace is otherwise in use"
 
 if [[ ! -e "$workspace_image" ]]; then
   printf 'Persistent workspace is already empty.\n'

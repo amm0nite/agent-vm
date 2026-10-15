@@ -2,22 +2,19 @@
 set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-image_dir="$script_dir/images"
-log_dir="$script_dir/logs"
+# shellcheck source=lib/vm.sh
+source "$script_dir/lib/vm.sh"
+image_dir="$vm_image_dir"
+log_dir="$vm_log_dir"
 upstream_image="$image_dir/Arch-Linux-x86_64-cloudimg.qcow2"
 upstream_checksum="$upstream_image.SHA256"
-prepared_image="$image_dir/arch-agent-base.qcow2"
+prepared_image="$vm_base_image"
 seed_image="$image_dir/cloud-init-seed.iso"
 rendered_user_data="$image_dir/cloud-init-user-data.build"
-ssh_key="$image_dir/agent-ssh-key"
+ssh_key="$vm_ssh_key"
 persist_home_config="$script_dir/config/persist-home.conf"
 image_url="https://fastly.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
 system_size="${ARCH_AGENT_SYSTEM_SIZE:-40G}"
-
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
 
 # Keep the lock file in place: all builders must lock the same inode.
 # Lock before touching logs, keys, downloads, or build artifacts.
