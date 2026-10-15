@@ -7,6 +7,9 @@ Codex, Claude Code, or a regular shell through SSH in the host terminal.
 The operating-system overlay is deleted when QEMU exits. Projects and agent
 login state survive in `images/workspace.qcow2`.
 
+The same VM can also run as a long-lived service in a Docker Compose stack;
+see [Docker Compose mode](#docker-compose-mode).
+
 ## Host requirements
 
 - `qemu-system-x86_64` and `qemu-img`
@@ -193,6 +196,54 @@ minimal Cage/Foot display:
 ```console
 ARCH_AGENT_DISPLAY=gtk ./run.sh shell
 ```
+
+## Docker Compose mode
+
+The VM can also run as a service in an existing Compose stack. The container
+boots the same image, built from the same `cloud-init/` and
+`config/persist-home.conf`, and starts the agent at boot in a `tmux` session
+named `agent`.
+
+CI publishes the container image to `ghcr.io/amm0nite/agent-vm` on every
+push to `main` that changes the image inputs, tagged `latest` and
+`sha-<commit>`. The VM image itself is not part of the container image: it is
+built into the data volume on first start, which takes several minutes. When a
+newer container image contains different provisioning files, the VM image is
+rebuilt automatically on the next start.
+
+Copy the service from [`docker/compose.example.yaml`](docker/compose.example.yaml)
+into the stack and set:
+
+- `KVM_GID`: the host's `kvm` group ID (`getent group kvm | cut -d: -f3`).
+- `ARCH_AGENT_AUTHORIZED_KEYS`: one or more SSH public keys, one per line,
+  allowed to log in as `agent`. Changing them only needs a container restart.
+- `ARCH_AGENT_MODE`: `claude`, `codex`, or `shell`.
+
+`ARCH_AGENT_MEMORY`, `ARCH_AGENT_CPUS`, `ARCH_AGENT_WORKSPACE_SIZE`,
+`ARCH_AGENT_SYSTEM_SIZE`, and `ARCH_AGENT_SHUTDOWN_TIMEOUT` (default 45
+seconds) work as in host mode. Keep `stop_grace_period` longer than the
+shutdown timeout.
+
+From the stack's directory:
+
+| Operation | Command |
+|---|---|
+| Start | `docker compose up -d agent-vm` |
+| Attach to the agent | `ssh -p 2222 agent@127.0.0.1 -t tmux attach -t agent` |
+| Update | `docker compose pull agent-vm && docker compose up -d agent-vm` |
+| Rebuild the VM image | `docker compose run --rm agent-vm build --force` |
+| Logs (build and VM console) | `docker compose logs -f agent-vm` |
+| Reset the OS | `docker compose restart agent-vm` |
+| Wipe the workspace | Stop the service, then `docker compose run --rm agent-vm wipe --force` |
+
+Detach from `tmux` with `Ctrl+B D`; the agent keeps running. If the agent
+exits, it is restarted in a new session. Add `-A` to the SSH command to let
+Git inside the session use your forwarded agent, or `-L` to reach guest ports.
+
+The container needs `/dev/kvm` but no privileges, Docker socket, or host
+directories. Everything persistent lives in the `/data` volume. The example
+puts the service on its own network so the VM cannot resolve or reach the
+rest of the stack by service name.
 
 ## Persistence and security
 

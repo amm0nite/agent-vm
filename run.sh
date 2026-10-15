@@ -2,11 +2,8 @@
 set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-image_dir="$script_dir/images"
-base_image="$image_dir/arch-agent-base.qcow2"
-workspace_image="$image_dir/workspace.qcow2"
-workspace_lock="$image_dir/workspace.lock"
-ssh_key="$image_dir/agent-ssh-key"
+# shellcheck source=lib/vm.sh
+source "$script_dir/lib/vm.sh"
 workspace_size="${ARCH_AGENT_WORKSPACE_SIZE:-64G}"
 ssh_port="${ARCH_AGENT_SSH_PORT:-2222}"
 display_mode="${ARCH_AGENT_DISPLAY:-none}"
@@ -17,11 +14,6 @@ forwarded_ports=()
 
 usage() {
   printf 'usage: %s [--git-ssh-key PATH] [--forward PORT]... [codex|claude|shell]\n' "$0"
-}
-
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
 }
 
 while (( $# > 0 )); do
@@ -74,14 +66,12 @@ case "$display_mode" in
   *) die "ARCH_AGENT_DISPLAY must be 'none' or 'gtk'" ;;
 esac
 
-[[ "$ssh_port" =~ ^(0|[1-9][0-9]*)$ ]] && \
-  (( ssh_port >= 1 && ssh_port <= 65535 )) || \
+vm_is_port "$ssh_port" || \
   die "ARCH_AGENT_SSH_PORT must be a port number between 1 and 65535"
 
 for (( port_index = 0; port_index < ${#forwarded_ports[@]}; port_index++ )); do
   forward_port="${forwarded_ports[port_index]}"
-  [[ "$forward_port" =~ ^(0|[1-9][0-9]*)$ ]] && \
-    (( forward_port >= 1 && forward_port <= 65535 )) || \
+  vm_is_port "$forward_port" || \
     die "--forward must be a TCP port number between 1 and 65535: $forward_port"
   [[ "$forward_port" != "$ssh_port" ]] || \
     die "--forward port $forward_port conflicts with the VM SSH port"
@@ -92,33 +82,25 @@ for (( port_index = 0; port_index < ${#forwarded_ports[@]}; port_index++ )); do
   done
 done
 
-command -v qemu-img >/dev/null 2>&1 || die "missing qemu-img; install QEMU"
-command -v qemu-system-x86_64 >/dev/null 2>&1 || die "missing qemu-system-x86_64; install QEMU"
-command -v jq >/dev/null 2>&1 || die "missing jq; install jq"
-command -v ssh >/dev/null 2>&1 || die "missing ssh; install openssh-client"
-command -v flock >/dev/null 2>&1 || die "missing flock; install util-linux"
-command -v timeout >/dev/null 2>&1 || die "missing timeout; install coreutils"
+vm_require_command qemu-img "install QEMU"
+vm_require_command qemu-system-x86_64 "install QEMU"
+vm_require_command jq "install jq"
+vm_require_command ssh "install openssh-client"
+vm_require_command flock "install util-linux"
+vm_require_command timeout "install coreutils"
 if [[ -n "$git_ssh_key" ]]; then
-  command -v ssh-agent >/dev/null 2>&1 || die "missing ssh-agent; install openssh-client"
-  command -v ssh-add >/dev/null 2>&1 || die "missing ssh-add; install openssh-client"
+  vm_require_command ssh-agent "install openssh-client"
+  vm_require_command ssh-add "install openssh-client"
   [[ -f "$git_ssh_key" && -r "$git_ssh_key" ]] || \
     die "Git SSH private key is not a readable file: $git_ssh_key"
 fi
-[[ -r "$base_image" ]] || die "base image not found; run $script_dir/build-image.sh first"
-[[ -r "$ssh_key" ]] || die "SSH key not found; rebuild with $script_dir/build-image.sh --force"
+[[ -r "$vm_base_image" ]] || die "base image not found; run $script_dir/build-image.sh first"
+[[ -r "$vm_ssh_key" ]] || die "SSH key not found; rebuild with $script_dir/build-image.sh --force"
 
-mkdir -p "$image_dir"
-exec 9>"$workspace_lock"
-flock -n 9 || die "the persistent workspace is already in use"
-if [[ ! -e "$workspace_image" ]]; then
-  printf 'Creating sparse persistent workspace (%s)...\n' "$workspace_size"
-  qemu-img create -f qcow2 "$workspace_image" "$workspace_size"
-fi
-
-[[ "$(qemu-img info --output=json "$base_image" | jq -r .format 2>/dev/null || true)" == qcow2 ]] || \
-  die "base image is not a qcow2 image"
-[[ "$(qemu-img info --output=json "$workspace_image" | jq -r .format 2>/dev/null || true)" == qcow2 ]] || \
-  die "workspace image is not a qcow2 image"
+vm_lock_workspace "the persistent workspace is already in use"
+vm_ensure_workspace "$workspace_size"
+vm_check_qcow2 "$vm_base_image" "base image"
+vm_check_qcow2 "$vm_workspace_image" "workspace image"
 
 runtime_dir="$(mktemp -d -t arch-agent-vm.XXXXXXXX)"
 overlay_image="$runtime_dir/os-overlay.qcow2"
@@ -132,21 +114,8 @@ git_agent_log=""
 ssh_ready=false
 cleanup_started=false
 
-ssh_common_options=(
-  -F /dev/null
-  -i "$ssh_key"
-  -o ForwardAgent=no
-  -o IdentityAgent=none
-  -o ControlMaster=no
-  -o ControlPath=none
-  -o ServerAliveInterval=15
-  -o ServerAliveCountMax=3
-  -o BatchMode=yes
-  -o IdentitiesOnly=yes
-  -o StrictHostKeyChecking=accept-new
-  -o "UserKnownHostsFile=$known_hosts"
-)
-ssh_options=(-p "$ssh_port" "${ssh_common_options[@]}")
+vm_set_ssh_options "$ssh_port" "$known_hosts"
+ssh_options=("${vm_ssh_options[@]}")
 
 process_is_running() {
   [[ -n "$qemu_pid" ]] && kill -0 "$qemu_pid" 2>/dev/null
@@ -194,8 +163,8 @@ cleanup() {
 
   if (( status != 0 )) && [[ -f "$serial_log" ]]; then
     local saved_log=""
-    if mkdir -p "$script_dir/logs" && \
-        saved_log="$(mktemp "$script_dir/logs/run-XXXXXXXX.log")" && \
+    if mkdir -p "$vm_log_dir" && \
+        saved_log="$(mktemp "$vm_log_dir/run-XXXXXXXX.log")" && \
         cp -- "$serial_log" "$saved_log"; then
       printf 'VM serial log: %s\n' "$saved_log" >&2
       rm -f -- "$serial_log"
@@ -251,38 +220,21 @@ if [[ -n "$git_ssh_key" ]]; then
   printf 'Git SSH agent forwarding enabled for this VM session.\n'
 fi
 
-qemu-img create \
-  -f qcow2 \
-  -F qcow2 \
-  -b "$base_image" \
-  "$overlay_image"
-
-acceleration=(-machine accel=tcg)
-if [[ -r /dev/kvm && -w /dev/kvm ]]; then
-  acceleration=(-enable-kvm -cpu host)
-fi
+vm_create_overlay "$overlay_image"
 
 printf 'Starting a disposable Arch OS with persistent workspace.\n'
-printf 'Mode: %s\nWorkspace: %s\nSSH: 127.0.0.1:%s\n' "$mode" "$workspace_image" "$ssh_port"
+printf 'Mode: %s\nWorkspace: %s\nSSH: 127.0.0.1:%s\n' "$mode" "$vm_workspace_image" "$ssh_port"
 for forward_port in "${forwarded_ports[@]}"; do
   printf 'TCP forward: 127.0.0.1:%s -> guest:%s\n' "$forward_port" "$forward_port"
 done
 
+vm_set_qemu_args "$mode" "$display_mode" "$overlay_image" 127.0.0.1 "$ssh_port"
 qemu-system-x86_64 \
-  "${acceleration[@]}" \
-  -name "arch-agent-$mode" \
-  -smbios "type=1,product=arch-agent-$display_mode-$mode" \
-  -m "${ARCH_AGENT_MEMORY:-8192}" \
-  -smp "${ARCH_AGENT_CPUS:-4}" \
+  "${vm_qemu_args[@]}" \
   "${display[@]}" \
   -daemonize \
   -pidfile "$pid_file" \
-  -serial "file:$serial_log" \
-  -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$ssh_port-:22" \
-  -drive "if=none,id=os,file=$overlay_image,format=qcow2,discard=unmap" \
-  -device virtio-blk-pci,drive=os,serial=AI_OS \
-  -drive "if=none,id=workspace,file=$workspace_image,format=qcow2,cache=writeback,discard=unmap" \
-  -device virtio-blk-pci,drive=workspace,serial=AI_WORKSPACE
+  -serial "file:$serial_log"
 
 qemu_pid="$(<"$pid_file")"
 

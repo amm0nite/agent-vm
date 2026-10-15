@@ -1,0 +1,31 @@
+# Service snippet for an existing Docker Compose stack.
+# Attach to the agent with:
+#   ssh -p 2222 agent@127.0.0.1 -t tmux attach -t agent
+services:
+  agent-vm:
+    image: ghcr.io/amm0nite/agent-vm:latest   # or :sha-<commit> to pin
+    restart: unless-stopped
+    stop_grace_period: 60s                     # longer than ARCH_AGENT_SHUTDOWN_TIMEOUT
+    devices:
+      - /dev/kvm
+    group_add:
+      - "${KVM_GID}"                           # getent group kvm | cut -d: -f3
+    ports:
+      - "127.0.0.1:2222:2222"
+    environment:
+      ARCH_AGENT_MODE: claude                  # claude | codex | shell
+      ARCH_AGENT_MEMORY: 8192                  # MiB
+      ARCH_AGENT_CPUS: 4
+      ARCH_AGENT_WORKSPACE_SIZE: 64G           # only used when the workspace is created
+      ARCH_AGENT_AUTHORIZED_KEYS: "ssh-ed25519 AAAA... you@host"
+    volumes:
+      - agent-vm-data:/data
+    networks:
+      - agent-vm
+
+volumes:
+  agent-vm-data:
+
+networks:
+  # Keeps the VM from resolving and reaching the rest of the stack.
+  agent-vm:

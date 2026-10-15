@@ -1,0 +1,8 @@
+# Only send what the Docker image needs; images/ holds multi-GB disks.
+*
+!build-image.sh
+!wipe-workspace.sh
+!lib/
+!cloud-init/
+!config/
+!docker/
