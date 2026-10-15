@@ -8,9 +8,12 @@ app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$app_dir/lib/vm.sh"
 
 ssh_port=2222
+# QEMU forwards SSH from loopback only; see run_vm.
+qemu_ssh_port=2221
 runtime_dir="${ARCH_AGENT_RUNTIME_DIR:-/data/run}"
 build_stamp="$vm_base_image.inputs"
 qemu_pid=""
+relay_pid=""
 
 usage() {
   cat <<'EOF'
@@ -77,7 +80,7 @@ stop_vm() {
 
   # Prefer a clean guest shutdown so the persistent ext4 workspace unmounts.
   qmp system_powerdown
-  vm_set_ssh_options "$ssh_port" /dev/null
+  vm_set_ssh_options "$qemu_ssh_port" /dev/null
   timeout --kill-after=2s 5s ssh "${vm_ssh_options[@]}" \
     -o ConnectTimeout=2 -o LogLevel=ERROR \
     agent@127.0.0.1 \
@@ -127,7 +130,7 @@ run_vm() {
   printf 'Agent: %s\nSSH: container port %s\n' "$mode" "$ssh_port"
 
   # QMP stays on a Unix socket: the guest can reach the container's loopback.
-  vm_set_qemu_args "service-$mode" none "$overlay_image" 0.0.0.0 "$ssh_port"
+  vm_set_qemu_args "service-$mode" none "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
   qemu-system-x86_64 \
     "${vm_qemu_args[@]}" \
     -display none \
@@ -138,11 +141,19 @@ run_vm() {
   qemu_pid=$!
   trap stop_vm TERM INT
 
+  # QEMU passes non-loopback client addresses through to the guest, where
+  # they can collide with guest subnets such as Docker's 172.17.0.0/16 and
+  # replies never leave the VM. Relaying through loopback makes every client
+  # appear as the QEMU gateway, 10.0.2.2.
+  socat "TCP-LISTEN:$ssh_port,fork,reuseaddr" "TCP:127.0.0.1:$qemu_ssh_port" &
+  relay_pid=$!
+
   wait "$qemu_pid" || status=$?
   while kill -0 "$qemu_pid" 2>/dev/null; do
     wait "$qemu_pid" || status=$?
   done
 
+  kill -TERM "$relay_pid" 2>/dev/null || true
   rm -rf -- "$runtime_dir"
   exit "$status"
 }
