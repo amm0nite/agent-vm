@@ -23,6 +23,7 @@ COPY build-image.sh wipe-workspace.sh /opt/agent-vm/
 COPY lib /opt/agent-vm/lib
 COPY cloud-init /opt/agent-vm/cloud-init
 COPY config /opt/agent-vm/config
+COPY guest /opt/agent-vm/guest
 COPY docker/entrypoint.sh /opt/agent-vm/docker/
 COPY docker/healthcheck.sh /usr/local/bin/agent-vm-healthcheck
 

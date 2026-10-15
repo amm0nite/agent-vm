@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+shutdown_guest() {
+  trap - EXIT HUP TERM
+  sudo systemctl poweroff --no-block >/dev/null 2>&1 || true
+}
+trap shutdown_guest EXIT HUP TERM
+
+/usr/local/bin/agent-session "$@"

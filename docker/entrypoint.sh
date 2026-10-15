@@ -24,9 +24,12 @@ EOF
 
 # Everything that determines the contents of the VM image.
 build_inputs() {
+  local guest_files
   printf 'system_size=%s\n' "${ARCH_AGENT_SYSTEM_SIZE:-40G}"
+  mapfile -t guest_files < <(cd "$app_dir" && find guest -type f | LC_ALL=C sort)
   (cd "$app_dir" && sha256sum \
-    build-image.sh cloud-init/user-data cloud-init/meta-data config/persist-home.conf)
+    build-image.sh cloud-init/user-data cloud-init/meta-data config/persist-home.conf \
+    "${guest_files[@]}")
 }
 
 build_image() {

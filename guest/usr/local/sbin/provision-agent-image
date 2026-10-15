@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usermod -aG docker agent
+# Package upgrades may replace the running kernel's modules. Start Docker
+# on the next boot, when the installed kernel and modules match.
+systemctl enable docker.service
+sudo -u agent docker --version
+sudo -u agent docker compose version
+sudo -u agent docker-compose version
+
+install -d -o agent -g agent /home/agent /home/agent/.local
+install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bash_profile /home/agent/.bash_profile
+install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bashrc /home/agent/.bashrc
+sudo -u agent env HOME=/home/agent npm config set prefix /home/agent/.local
+sudo -u agent env HOME=/home/agent npm install -g @openai/codex
+sudo -u agent env HOME=/home/agent curl -fsSL https://claude.ai/install.sh -o /tmp/install-claude.sh
+sudo -u agent env HOME=/home/agent bash /tmp/install-claude.sh
+rm -f /tmp/install-claude.sh
+test -x /home/agent/.local/bin/codex
+test -x /home/agent/.local/bin/claude
+sudo -u agent env HOME=/home/agent /home/agent/.local/bin/codex --version
+sudo -u agent env HOME=/home/agent /home/agent/.local/bin/claude --version
+systemctl enable prepare-workspace.service agent-authorized-keys.service agent-autostart.service
+systemctl set-default multi-user.target
+touch /etc/cloud/cloud-init.disabled
+touch /var/lib/arch-agent-image-ready
+printf '%s\n' ARCH_AGENT_IMAGE_READY >/dev/ttyS0

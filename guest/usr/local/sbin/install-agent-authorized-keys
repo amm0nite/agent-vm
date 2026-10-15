@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The OS is discarded after shutdown, so keys are appended once per boot.
+authorized_keys=/home/agent/.ssh/authorized_keys
+install -d -o agent -g agent -m 0700 /home/agent/.ssh
+{
+  printf '# Keys passed by the VM host\n'
+  cat "$CREDENTIALS_DIRECTORY/arch-agent.authorized_keys"
+  printf '\n'
+} >>"$authorized_keys"
+chown agent:agent "$authorized_keys"
+chmod 600 "$authorized_keys"

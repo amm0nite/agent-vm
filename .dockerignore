@@ -6,3 +6,4 @@
 !cloud-init/
 !config/
 !docker/
+!guest/

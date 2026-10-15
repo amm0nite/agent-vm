@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only VMs started as a service (Docker mode) run the agent at boot.
+# Interactive run.sh sessions start their agent through SSH instead.
+product_name="$(</sys/class/dmi/id/product_name)"
+case "$product_name" in
+  arch-agent-*-service-*) mode="${product_name##*-service-}" ;;
+  *) exit 1 ;;
+esac
+[[ "${1:-}" != --check ]] || exit 0
+
+exec tmux new-session -d -s agent -c /workspace/projects \
+  /usr/local/bin/agent-session "$mode"
