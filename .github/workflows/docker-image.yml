@@ -48,6 +48,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: agent-vm:test
+          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -1,6 +1,7 @@
 # Runs the disposable Arch agent VM as a long-lived container.
 # The VM image is built on first start into /data, not into this image.
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+# Unpinned on purpose: each CI build picks up current Debian and QEMU fixes.
+FROM debian:trixie-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
