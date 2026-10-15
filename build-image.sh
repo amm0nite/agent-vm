@@ -114,7 +114,7 @@ if [[ -e "$prepared_image" && "$force" != true ]]; then
 fi
 
 printf 'Downloading the official Arch cloud image...\n'
-curl --fail --location --retry 3 --output "$upstream_checksum" "$image_url.SHA256"
+curl --fail --location --retry 3 --retry-all-errors --output "$upstream_checksum" "$image_url.SHA256"
 
 if ! (cd "$image_dir" && sha256sum --check --status "$(basename -- "$upstream_checksum")"); then
   if [[ -e "$upstream_image" ]]; then
@@ -123,7 +123,7 @@ if ! (cd "$image_dir" && sha256sum --check --status "$(basename -- "$upstream_ch
   else
     printf 'Downloading the Arch cloud image...\n'
   fi
-  curl --fail --location --retry 3 --output "$upstream_image" "$image_url"
+  curl --fail --location --retry 3 --retry-all-errors --output "$upstream_image" "$image_url"
 fi
 
 printf 'Verifying image checksum...\n'
@@ -166,4 +166,4 @@ rm -f -- "$seed_image" "$rendered_user_data"
 build_finished=true
 
 printf '\nReady: %s\n' "$prepared_image"
-printf 'Next:  %s codex\n' "$script_dir/run.sh"
+printf 'Next:  %s\n' "$script_dir/run.sh"
