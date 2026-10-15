@@ -21,7 +21,7 @@ test -x /home/agent/.local/bin/codex
 test -x /home/agent/.local/bin/claude
 sudo -u agent env HOME=/home/agent /home/agent/.local/bin/codex --version
 sudo -u agent env HOME=/home/agent /home/agent/.local/bin/claude --version
-systemctl enable prepare-workspace.service agent-authorized-keys.service agent-autostart.service
+systemctl enable prepare-workspace.service agent-authorized-keys.service
 systemctl set-default multi-user.target
 touch /etc/cloud/cloud-init.disabled
 touch /var/lib/arch-agent-image-ready

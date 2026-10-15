@@ -99,15 +99,10 @@ stop_vm() {
 }
 
 run_vm() {
-  local mode="${ARCH_AGENT_MODE:-claude}"
   local overlay_image="$runtime_dir/os-overlay.qcow2"
   local authorized_keys
   local status=0
 
-  case "$mode" in
-    claude|codex|shell) ;;
-    *) die "ARCH_AGENT_MODE must be 'claude', 'codex', or 'shell'" ;;
-  esac
   [[ -n "${ARCH_AGENT_AUTHORIZED_KEYS:-}" ]] || \
     die "set ARCH_AGENT_AUTHORIZED_KEYS to the SSH public keys allowed to log in"
   ssh-keygen -l -f <(printf '%s\n' "$ARCH_AGENT_AUTHORIZED_KEYS") >/dev/null 2>&1 || \
@@ -127,10 +122,10 @@ run_vm() {
   vm_create_overlay "$overlay_image"
 
   printf 'Starting a disposable Arch OS with persistent workspace.\n'
-  printf 'Agent: %s\nSSH: container port %s\n' "$mode" "$ssh_port"
+  printf 'SSH: container port %s\n' "$ssh_port"
 
   # QMP stays on a Unix socket: the guest can reach the container's loopback.
-  vm_set_qemu_args "service-$mode" none "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
+  vm_set_qemu_args none "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
   qemu-system-x86_64 \
     "${vm_qemu_args[@]}" \
     -display none \

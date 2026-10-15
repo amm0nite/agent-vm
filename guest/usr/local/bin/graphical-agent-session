@@ -2,10 +2,9 @@
 
 # Cage gives the VM a minimal Wayland session containing only Foot.
 # If graphics initialization fails, preserve access through the console.
-mode="${1:-shell}"
-dbus-run-session -- cage -s -- foot --fullscreen /usr/local/bin/agent-session "$mode"
+dbus-run-session -- cage -s -- foot --fullscreen /usr/local/bin/agent-session
 status=$?
 if (( status != 0 )); then
   printf 'Graphical terminal failed (status %d); using the console.\n' "$status" >&2
-  exec /usr/local/bin/agent-session "$mode"
+  exec /usr/local/bin/agent-session
 fi

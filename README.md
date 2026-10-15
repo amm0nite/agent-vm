@@ -2,7 +2,8 @@
 
 A fresh Arch Linux operating system on every boot, with a persistent workspace
 disk. The VM starts headlessly, mounts the workspace at `/workspace`, and opens
-Codex, Claude Code, or a regular shell through SSH in the host terminal.
+a shell through SSH in the host terminal, from which you start Codex or
+Claude Code.
 
 The operating-system overlay is deleted when QEMU exits. Projects and agent
 login state survive in `images/workspace.qcow2`.
@@ -89,17 +90,18 @@ disk to the reusable base image.
 ## Run
 
 ```console
-./run.sh codex
-./run.sh claude
-./run.sh shell
+./run.sh
 ```
+
+The shell starts in `/workspace/projects`. Start an agent from it with
+`codex --yolo` or `claude --dangerously-skip-permissions`.
 
 To expose a TCP service from the VM through the SSH session on the same
 localhost port, pass `--forward`. For example, this makes guest port 8080
 available at `http://127.0.0.1:8080` on the host:
 
 ```console
-./run.sh --forward 8080 codex
+./run.sh --forward 8080
 ```
 
 The guest service can listen on `127.0.0.1:8080` or `0.0.0.0:8080`. The host
@@ -107,14 +109,14 @@ listener is restricted to `127.0.0.1`, so it is not exposed to the local
 network. Repeat the option to forward multiple ports:
 
 ```console
-./run.sh --forward 3000 --forward 8080 codex
+./run.sh --forward 3000 --forward 8080
 ```
 
 To let Git inside the VM clone and push over SSH, forward one dedicated key
 from the host:
 
 ```console
-./run.sh --git-ssh-key ~/.ssh/agent-github codex
+./run.sh --git-ssh-key ~/.ssh/agent-github
 ```
 
 The matching public key must be registered with the Git host. `run.sh` starts
@@ -158,9 +160,9 @@ The image build creates a dedicated SSH key. The first run creates a sparse
 defaults with environment variables:
 
 ```console
-ARCH_AGENT_WORKSPACE_SIZE=100G ./run.sh shell
-ARCH_AGENT_MEMORY=16384 ARCH_AGENT_CPUS=8 ./run.sh codex
-ARCH_AGENT_SSH_PORT=2223 ./run.sh claude
+ARCH_AGENT_WORKSPACE_SIZE=100G ./run.sh
+ARCH_AGENT_MEMORY=16384 ARCH_AGENT_CPUS=8 ./run.sh
+ARCH_AGENT_SSH_PORT=2223 ./run.sh
 ```
 
 The workspace size variable only applies when the disk is first created.
@@ -194,15 +196,15 @@ For a troubleshooting console, retain the SSH session while also opening the
 minimal Cage/Foot display:
 
 ```console
-ARCH_AGENT_DISPLAY=gtk ./run.sh shell
+ARCH_AGENT_DISPLAY=gtk ./run.sh
 ```
 
 ## Docker Compose mode
 
 The VM can also run as a service in an existing Compose stack. The container
 boots the same image, built from the same `cloud-init/` and
-`config/persist-home.conf`, and starts the agent at boot in a `tmux` session
-named `agent`.
+`config/persist-home.conf`, and runs until the container stops. Connect over
+SSH to get a shell and start an agent.
 
 CI publishes the container image to `ghcr.io/amm0nite/agent-vm` on every
 push to `main` that changes the image inputs, tagged `latest` and
@@ -217,7 +219,6 @@ into the stack and set:
 - `KVM_GID`: the host's `kvm` group ID (`getent group kvm | cut -d: -f3`).
 - `ARCH_AGENT_AUTHORIZED_KEYS`: one or more SSH public keys, one per line,
   allowed to log in as `agent`. Changing them only needs a container restart.
-- `ARCH_AGENT_MODE`: `claude`, `codex`, or `shell`.
 
 `ARCH_AGENT_MEMORY`, `ARCH_AGENT_CPUS`, `ARCH_AGENT_WORKSPACE_SIZE`,
 `ARCH_AGENT_SYSTEM_SIZE`, and `ARCH_AGENT_SHUTDOWN_TIMEOUT` (default 45
@@ -229,16 +230,22 @@ From the stack's directory:
 | Operation | Command |
 |---|---|
 | Start | `docker compose up -d agent-vm` |
-| Attach to the agent | `ssh -p 2222 agent@127.0.0.1 -t tmux attach -t agent` |
+| Connect | `ssh -p 2222 agent@127.0.0.1` |
 | Update | `docker compose pull agent-vm && docker compose up -d agent-vm` |
 | Rebuild the VM image | `docker compose run --rm agent-vm build --force` |
 | Logs (build and VM console) | `docker compose logs -f agent-vm` |
 | Reset the OS | `docker compose restart agent-vm` |
 | Wipe the workspace | Stop the service, then `docker compose run --rm agent-vm wipe --force` |
 
-Detach from `tmux` with `Ctrl+B D`; the agent keeps running. If the agent
-exits, it is restarted in a new session. Add `-A` to the SSH command to let
-Git inside the session use your forwarded agent, or `-L` to reach guest ports.
+Unlike host mode, disconnecting does not stop the VM, but it does end the
+processes of that SSH session. To keep an agent running between connections,
+start it inside `tmux` (`tmux new -A -s agent`), detach with `Ctrl+B D`, and
+reattach later with `ssh -p 2222 agent@127.0.0.1 -t tmux new -A -s agent`.
+Add `-A` to the SSH command to let Git use your forwarded agent, or `-L` to
+reach guest ports. After reattaching to `tmux` over a new connection, shells
+that were already open still point to the previous connection's agent; open a
+new window, or run `eval "$(tmux show-environment -s SSH_AUTH_SOCK)"` in the
+shell, to use the new one.
 
 The container needs `/dev/kvm` but no privileges, Docker socket, or host
 directories. Everything persistent lives in the `/data` volume. The example

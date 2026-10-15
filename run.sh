@@ -7,13 +7,11 @@ source "$script_dir/lib/vm.sh"
 workspace_size="${ARCH_AGENT_WORKSPACE_SIZE:-64G}"
 ssh_port="${ARCH_AGENT_SSH_PORT:-2222}"
 display_mode="${ARCH_AGENT_DISPLAY:-none}"
-mode=shell
-mode_set=false
 git_ssh_key=""
 forwarded_ports=()
 
 usage() {
-  printf 'usage: %s [--git-ssh-key PATH] [--forward PORT]... [codex|claude|shell]\n' "$0"
+  printf 'usage: %s [--git-ssh-key PATH] [--forward PORT]...\n' "$0"
 }
 
 while (( $# > 0 )); do
@@ -37,12 +35,6 @@ while (( $# > 0 )); do
       forward_port="${1#*=}"
       [[ -n "$forward_port" ]] || die "--forward requires a TCP port"
       forwarded_ports+=("$forward_port")
-      shift
-      ;;
-    codex|claude|shell)
-      [[ "$mode_set" == false ]] || die "only one startup mode may be specified"
-      mode="$1"
-      mode_set=true
       shift
       ;;
     -h|--help)
@@ -223,12 +215,12 @@ fi
 vm_create_overlay "$overlay_image"
 
 printf 'Starting a disposable Arch OS with persistent workspace.\n'
-printf 'Mode: %s\nWorkspace: %s\nSSH: 127.0.0.1:%s\n' "$mode" "$vm_workspace_image" "$ssh_port"
+printf 'Workspace: %s\nSSH: 127.0.0.1:%s\n' "$vm_workspace_image" "$ssh_port"
 for forward_port in "${forwarded_ports[@]}"; do
   printf 'TCP forward: 127.0.0.1:%s -> guest:%s\n' "$forward_port" "$forward_port"
 done
 
-vm_set_qemu_args "$mode" "$display_mode" "$overlay_image" 127.0.0.1 "$ssh_port"
+vm_set_qemu_args "$display_mode" "$overlay_image" 127.0.0.1 "$ssh_port"
 qemu-system-x86_64 \
   "${vm_qemu_args[@]}" \
   "${display[@]}" \
@@ -285,7 +277,7 @@ set +e
 ssh "${session_ssh_options[@]}" "${ssh_options[@]}" \
   agent@127.0.0.1 \
   env "PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin" \
-  /usr/local/bin/ssh-agent-session "$mode"
+  /usr/local/bin/ssh-agent-session
 ssh_status=$?
 set -e
 

@@ -1,6 +1,6 @@
 # Service snippet for an existing Docker Compose stack.
-# Attach to the agent with:
-#   ssh -p 2222 agent@127.0.0.1 -t tmux attach -t agent
+# Connect with:
+#   ssh -p 2222 agent@127.0.0.1
 services:
   agent-vm:
     image: ghcr.io/amm0nite/agent-vm:latest   # or :sha-<commit> to pin
@@ -13,7 +13,6 @@ services:
     ports:
       - "127.0.0.1:2222:2222"
     environment:
-      ARCH_AGENT_MODE: claude                  # claude | codex | shell
       ARCH_AGENT_MEMORY: 8192                  # MiB
       ARCH_AGENT_CPUS: 4
       ARCH_AGENT_WORKSPACE_SIZE: 64G           # only used when the workspace is created

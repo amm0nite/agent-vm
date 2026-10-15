@@ -1,5 +1,0 @@
-# Keep a stable path to the most recently forwarded SSH agent, so the
-# agent tmux session started at boot can use keys forwarded by ssh -A.
-if [ -n "$SSH_AUTH_SOCK" ] && [ -d "$HOME/.ssh" ]; then
-  ln -sfn "$SSH_AUTH_SOCK" "$HOME/.ssh/agent.sock"
-fi
