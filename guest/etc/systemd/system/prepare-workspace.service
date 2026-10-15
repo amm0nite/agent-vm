@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare the persistent AI workspace
+Before=getty@tty1.service sshd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/prepare-ai-workspace
+RemainAfterExit=yes
+ExecStop=-/usr/bin/fstrim /workspace
+ExecStop=-/usr/bin/umount /workspace
+
+[Install]
+WantedBy=multi-user.target

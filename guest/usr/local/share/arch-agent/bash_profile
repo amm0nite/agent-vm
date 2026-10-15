@@ -1,0 +1,7 @@
+export PATH="$HOME/.local/bin:$PATH"
+if [[ "$(tty 2>/dev/null)" == /dev/tty1 ]]; then
+  product_name="$(</sys/class/dmi/id/product_name)"
+  if [[ "$product_name" == arch-agent-gtk-* ]]; then
+    exec /usr/local/bin/graphical-agent-session "${product_name#arch-agent-gtk-}"
+  fi
+fi

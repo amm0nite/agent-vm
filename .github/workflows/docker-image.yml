@@ -10,6 +10,7 @@ on:
       - cloud-init/**
       - config/**
       - docker/**
+      - guest/**
       - lib/**
       - wipe-workspace.sh
   workflow_dispatch:

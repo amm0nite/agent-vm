@@ -13,6 +13,7 @@ seed_image="$image_dir/cloud-init-seed.iso"
 rendered_user_data="$image_dir/cloud-init-user-data.build"
 ssh_key="$vm_ssh_key"
 persist_home_config="$script_dir/config/persist-home.conf"
+guest_dir="$script_dir/guest"
 image_url="https://fastly.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
 system_size="${ARCH_AGENT_SYSTEM_SIZE:-40G}"
 
@@ -66,6 +67,8 @@ require_command cloud-localds "install cloud-image-utils"
 require_command sha256sum "install coreutils"
 require_command ssh-keygen "install openssh-client"
 require_command base64 "install coreutils"
+require_command tar "install tar"
+[[ -d "$guest_dir" ]] || die "missing guest files: $guest_dir"
 [[ -r "$persist_home_config" ]] || die "missing persistence config: $persist_home_config"
 
 while read -r entry_type home_relative workspace_relative extra; do
@@ -91,7 +94,20 @@ if [[ ! -e "$ssh_key" ]]; then
 fi
 chmod 600 "$ssh_key"
 ssh_public_key="$(<"$ssh_key.pub")"
-persist_home_config_base64="$(base64 -w 0 "$persist_home_config")"
+
+# Pack the guest files as root-owned with normalized modes. Only regular files
+# are archived, so extraction leaves existing directories such as /etc as-is.
+guest_staging="$(mktemp -d)"
+cp -R -- "$guest_dir/." "$guest_staging/"
+install -D -m 0644 -- "$persist_home_config" "$guest_staging/etc/arch-agent/persist-home.conf"
+guest_files_base64="$(
+  cd "$guest_staging" &&
+    find . -type f -print0 | LC_ALL=C sort -z |
+    tar -czf - --owner=0 --group=0 --numeric-owner --mode='u=rwX,go=rX' \
+      --null --no-recursion --files-from=- |
+    base64 -w 0
+)"
+rm -rf -- "$guest_staging"
 
 if [[ -e "$prepared_image" && "$force" != true ]]; then
   die "$prepared_image already exists; use --force to rebuild it"
@@ -119,7 +135,7 @@ cp --reflink=auto -- "$upstream_image" "$build_image"
 qemu-img resize "$build_image" "$system_size"
 sed \
   -e "s|@@ARCH_AGENT_SSH_PUBLIC_KEY@@|$ssh_public_key|" \
-  -e "s|@@ARCH_AGENT_PERSIST_HOME_CONFIG@@|$persist_home_config_base64|" \
+  -e "s|@@ARCH_AGENT_GUEST_FILES@@|$guest_files_base64|" \
   "$script_dir/cloud-init/user-data" >"$rendered_user_data"
 cloud-localds "$seed_image" "$rendered_user_data" "$script_dir/cloud-init/meta-data"
 

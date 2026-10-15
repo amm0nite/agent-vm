@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+disk=/dev/disk/by-id/virtio-AI_WORKSPACE
+mountpoint=/workspace
+
+if [[ ! -b "$disk" ]]; then
+  echo "Persistent workspace disk not found: $disk" >&2
+  exit 1
+fi
+
+filesystem_type="$(blkid -o value -s TYPE "$disk" || true)"
+if [[ -z "$filesystem_type" ]]; then
+  mkfs.ext4 -L AI_WORKSPACE "$disk"
+elif [[ "$filesystem_type" != ext4 ]]; then
+  echo "Refusing unexpected workspace filesystem: $filesystem_type" >&2
+  exit 1
+fi
+
+mkdir -p "$mountpoint"
+mount -o noatime "$disk" "$mountpoint"
+mkdir -p "$mountpoint/projects"
+chown agent:agent "$mountpoint/projects"
+
+while read -r entry_type home_relative workspace_relative extra; do
+  [[ -n "$entry_type" ]] || continue
+  [[ "$entry_type" != \#* ]] || continue
+
+  if [[ -z "$home_relative" || -z "$workspace_relative" || -n "$extra" ]]; then
+    echo "Invalid persistence entry: $entry_type $home_relative $workspace_relative $extra" >&2
+    exit 1
+  fi
+  if [[ "$home_relative" == /* || "$workspace_relative" == /* ||
+        "$home_relative" == "." || "$workspace_relative" == "." ||
+        "/$home_relative/" == *"/../"* || "/$workspace_relative/" == *"/../"* ]]; then
+    echo "Unsafe persistence path: $home_relative -> $workspace_relative" >&2
+    exit 1
+  fi
+
+  home_path="/home/agent/$home_relative"
+  persistent_path="$mountpoint/$workspace_relative"
+  mkdir -p "$(dirname -- "$home_path")" "$(dirname -- "$persistent_path")"
+  chown agent:agent "$(dirname -- "$home_path")" "$(dirname -- "$persistent_path")"
+
+  case "$entry_type" in
+    dir)
+      mkdir -p "$persistent_path"
+      if [[ "$home_relative" == ".ssh" ]]; then
+        chmod 700 "$persistent_path"
+      fi
+      ;;
+    file)
+      touch "$persistent_path"
+      chmod 600 "$persistent_path"
+      ;;
+    json)
+      if [[ ! -s "$persistent_path" ]]; then
+        printf '{}\n' >"$persistent_path"
+      fi
+      chmod 600 "$persistent_path"
+      ;;
+    *)
+      echo "Unknown persistence type: $entry_type" >&2
+      exit 1
+      ;;
+  esac
+
+  chown -R agent:agent "$persistent_path"
+  rm -rf -- "$home_path"
+  ln -sfnT "$persistent_path" "$home_path"
+  chown -h agent:agent "$home_path"
+done </etc/arch-agent/persist-home.conf
+
+if [[ -d "$mountpoint/.agent-state" ]]; then
+  chown agent:agent "$mountpoint/.agent-state"
+  chmod 700 "$mountpoint/.agent-state"
+fi

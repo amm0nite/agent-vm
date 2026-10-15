@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="/home/agent/.local/bin:$PATH"
+
+if ! systemctl is-active --quiet prepare-workspace.service || ! mountpoint -q /workspace; then
+  printf 'Workspace preparation failed; refusing to start a session.\n' >&2
+  exit 1
+fi
+
+mode="${1:-}"
+if [[ -z "$mode" && -r /sys/class/dmi/id/product_name ]]; then
+  product_name="$(</sys/class/dmi/id/product_name)"
+  case "$product_name" in
+    arch-agent-gtk-*) mode="${product_name#arch-agent-gtk-}" ;;
+    arch-agent-none-*) mode="${product_name#arch-agent-none-}" ;;
+    *) mode=shell ;;
+  esac
+fi
+
+cd /workspace/projects
+clear
+printf '\n  Disposable Arch Agent VM\n'
+printf '  Persistent workspace: /workspace/projects\n'
+printf '  Persistent agent state: /workspace/.agent-state\n\n'
+
+case "$mode" in
+  codex)
+    exec codex --yolo
+    ;;
+  claude)
+    exec claude --dangerously-skip-permissions
+    ;;
+  shell|arch-agent-|"")
+    printf '  Start an agent with:  codex --yolo\n'
+    printf '                        claude --dangerously-skip-permissions\n\n'
+    exec bash -l
+    ;;
+  *)
+    printf 'Unknown startup mode %q; opening a shell.\n\n' "$mode" >&2
+    exec bash -l
+    ;;
+esac

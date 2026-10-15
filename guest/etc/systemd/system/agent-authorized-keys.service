@@ -1,0 +1,14 @@
+[Unit]
+Description=Authorize SSH keys passed by the VM host
+ConditionCredential=arch-agent.authorized_keys
+After=prepare-workspace.service
+Before=sshd.service
+
+[Service]
+Type=oneshot
+LoadCredential=arch-agent.authorized_keys
+ExecStart=/usr/local/sbin/install-agent-authorized-keys
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
