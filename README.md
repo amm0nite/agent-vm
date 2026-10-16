@@ -3,7 +3,7 @@
 A fresh Arch Linux operating system on every boot, with a persistent workspace
 disk. The VM starts headlessly, mounts the workspace at `/workspace`, and opens
 a shell through SSH in the host terminal, from which you start Codex or
-Claude Code.
+Claude Code or OpenCode.
 
 The operating-system overlay is deleted when QEMU exits. Projects and agent
 login state survive in `images/workspace.qcow2`.
@@ -34,11 +34,14 @@ sudo apt install qemu-system-x86 qemu-utils cloud-image-utils curl jq
 ## Build once
 
 The builder downloads Arch's official cloud image, verifies its published
-SHA-256 checksum, installs development tools plus both agents, then saves the
+SHA-256 checksum, installs development tools plus all three agents, then saves the
 prepared immutable base image.
 
-Codex is installed from its npm package, with Bubblewrap available for its
-sandbox. Claude Code uses Anthropic's recommended native Linux installer.
+OpenCode is installed from Arch's official `opencode` package. Claude Code uses
+Anthropic's recommended native Linux installer. Codex uses the official
+`@openai/codex` npm package, with Bubblewrap available for its sandbox. This keeps
+Codex binaries on the disposable OS disk; its standalone installer places them
+under `~/.codex`, which this VM replaces with persistent agent state at boot.
 
 Docker and Docker Compose are installed, and Docker starts automatically on
 boot. The `agent` user belongs to the `docker` group, so `docker`,
@@ -94,7 +97,10 @@ disk to the reusable base image.
 ```
 
 The shell starts in `/workspace/projects`. Start an agent from it with
-`codex --yolo` or `claude --dangerously-skip-permissions`.
+`codex --yolo`, `claude --dangerously-skip-permissions`, or `opencode`.
+
+For an existing base image, run `./build-image.sh --force` to install newly added
+tools such as OpenCode, then start a new VM session. The workspace disk is kept.
 
 To expose a TCP service from the VM through the SSH session on the same
 localhost port, pass `--forward`. For example, this makes guest port 8080
@@ -145,8 +151,11 @@ ssh-add -l
 ssh -T git@github.com
 ```
 
-On the first Claude or Codex launch, authenticate inside the VM. The resulting
+On the first Claude, Codex, or OpenCode launch, authenticate inside the VM
+(use `/connect` in OpenCode). The resulting
 agent state is stored on the persistent workspace and reused on later boots.
+OpenCode's global configuration (`~/.config/opencode`) and application data
+(`~/.local/share/opencode`, including credentials and sessions) persist as well.
 
 Home-directory persistence is configured in `config/persist-home.conf`. Each
 entry declares a `dir`, `file`, or `json`, followed by its path relative to
@@ -255,7 +264,7 @@ rest of the stack by service name.
 ## Persistence and security
 
 - `/workspace/projects` contains persistent work.
-- `/workspace/.agent-state` contains persistent Codex and Claude login state.
+- `/workspace/.agent-state` contains persistent Codex, Claude, and OpenCode state.
 - Selected home paths such as GitHub CLI state, `.gitconfig`, shell history,
   and SSH `known_hosts` are declared in `config/persist-home.conf`.
 - Everything else is discarded after shutdown.
@@ -265,7 +274,8 @@ rest of the stack by service name.
 - A key passed with `--git-ssh-key` remains on the host, but the VM can request
   signatures from it until the session ends. Prefer a dedicated, narrowly
   authorized Git key rather than forwarding a general-purpose identity.
-- The agents launch with permission checks disabled. Only place data on the
+- The suggested Codex and Claude commands disable permission checks; OpenCode
+  uses its default permissions. Only place data on the
   workspace disk that the agents are allowed to modify or delete.
 
 To reset only the OS, close the VM and start it again. Use

@@ -14,5 +14,6 @@ printf '\n  Disposable Arch Agent VM\n'
 printf '  Persistent workspace: /workspace/projects\n'
 printf '  Persistent agent state: /workspace/.agent-state\n\n'
 printf '  Start an agent with:  codex --yolo\n'
-printf '                        claude --dangerously-skip-permissions\n\n'
+printf '                        claude --dangerously-skip-permissions\n'
+printf '                        opencode\n\n'
 exec bash -l
