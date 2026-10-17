@@ -1,247 +1,174 @@
 # Disposable Arch Agent VM
 
-A fresh Arch Linux operating system on every boot, with a persistent workspace
-disk. The VM starts headlessly, mounts the workspace at `/workspace`, and opens
-a shell through SSH in the host terminal, from which you start Codex or
-Claude Code, OpenCode, or Pi.
+A fresh Arch Linux VM on every boot, with a persistent workspace for projects
+and agent logins. Connect through SSH and start Codex, Claude Code, OpenCode,
+or Pi. Development tools, Docker, and Docker Compose are included.
 
-The operating-system overlay is deleted when QEMU exits. Projects and agent
-login state survive in `images/workspace.qcow2`.
+Run it from your terminal or as a [Docker Compose service](#docker-compose-mode).
 
-The same VM can also run as a long-lived service in a Docker Compose stack;
-see [Docker Compose mode](#docker-compose-mode).
+## Quick start
 
-## Host requirements
-
-- `qemu-system-x86_64` and `qemu-img`
-- `ssh` and `ssh-keygen` from OpenSSH
-- `cloud-localds` from `cloud-image-utils` (only while building)
-- `curl`, `sha256sum`, and `jq`
-- KVM access is optional but strongly recommended
+Install the host dependencies. KVM access is optional but strongly recommended
+for performance.
 
 On Arch Linux:
 
 ```console
-sudo pacman -S qemu-desktop cloud-image-utils curl jq
+sudo pacman -S qemu-desktop cloud-image-utils openssh curl jq
 ```
 
 On Debian or Ubuntu:
 
 ```console
-sudo apt install qemu-system-x86 qemu-utils cloud-image-utils curl jq
+sudo apt install qemu-system-x86 qemu-utils cloud-image-utils openssh-client curl jq
 ```
 
-## Build once
-
-The builder downloads Arch's official cloud image, verifies its published
-SHA-256 checksum, installs development tools plus all four agents, then saves the
-prepared immutable base image.
-
-OpenCode is installed from Arch's official `opencode` package. Claude Code uses
-Anthropic's recommended native Linux installer. Codex uses the official
-`@openai/codex` npm package, with Bubblewrap available for its sandbox. This keeps
-Codex binaries on the disposable OS disk; its standalone installer places them
-under `~/.codex`, which this VM replaces with persistent agent state at boot.
-
-Pi uses its official `@earendil-works/pi-coding-agent` npm package with
-`--ignore-scripts`, as documented in the [Pi quickstart](https://pi.dev/docs/latest/quickstart).
-This reuses the image's Node.js and npm installation and keeps Pi binaries under
-`~/.local` on the disposable OS disk. Pi requires Node.js 22.19 or newer.
-Its credentials, settings, sessions, and installed Pi packages under `~/.pi/agent`
-are stored on the persistent workspace.
-
-Docker and Docker Compose are installed, and Docker starts automatically on
-boot. The `agent` user belongs to the `docker` group, so `docker`,
-`docker compose`, and `docker-compose` work without sudo. Docker images,
-containers, and volumes use the disposable OS disk and are discarded after
-shutdown; bind mount project directories under `/workspace` for persistent data.
+Build the base image, then start a session:
 
 ```console
 ./build-image.sh
-```
-
-Building needs network access and several minutes. Use `./build-image.sh
---force` to replace an existing prepared image.
-
-The system disk defaults to a sparse 40 GB image, leaving room for larger
-development toolchains such as the Android SDK. Override its virtual size when
-building with `ARCH_AGENT_SYSTEM_SIZE`:
-
-```console
-ARCH_AGENT_SYSTEM_SIZE=64G ./build-image.sh --force
-```
-
-Only one image build can run at a time. A second builder exits before changing
-logs or image artifacts.
-
-Every build saves the builder output and the VM's serial/cloud-init console in
-`logs/`. The most recent log is always available at:
-
-```console
-less logs/latest-build.log
-```
-
-To watch it from a second terminal while building:
-
-```console
-tail -f logs/latest-build.log
-```
-
-For shell command tracing in addition to the normal console output:
-
-```console
-ARCH_AGENT_TRACE=1 ./build-image.sh
-```
-
-The builder only accepts the image after cloud-init emits an explicit success
-marker. Interrupting or closing QEMU cannot promote a partially provisioned
-disk to the reusable base image.
-
-## Run
-
-```console
 ./run.sh
 ```
 
-The shell starts in `/workspace/projects`. Start an agent from it with
-`codex --yolo`, `claude --dangerously-skip-permissions`, `opencode`, or `pi`.
+The build downloads and verifies Arch's official cloud image and installs the
+included tools. It needs network access and takes several minutes.
 
-For an existing base image, run `./build-image.sh --force` to install newly added
-tools such as Pi, then start a new VM session. The workspace disk is kept.
+The VM opens a shell in `/workspace/projects`. Start your preferred agent:
 
-To expose a TCP service from the VM through the SSH session on the same
-localhost port, pass `--forward`. For example, this makes guest port 8080
-available at `http://127.0.0.1:8080` on the host:
+| Agent | Command |
+|---|---|
+| Codex | `codex --yolo` |
+| Claude Code | `claude --dangerously-skip-permissions` |
+| OpenCode | `opencode` |
+| Pi | `pi` |
 
-```console
-./run.sh --forward 8080
-```
+Authenticate inside the VM on first use (`/connect` in OpenCode, `/login` in Pi).
+Credentials and sessions persist across boots.
 
-The guest service can listen on `127.0.0.1:8080` or `0.0.0.0:8080`. The host
-listener is restricted to `127.0.0.1`, so it is not exposed to the local
-network. Repeat the option to forward multiple ports:
+Exit the shell or close the terminal to stop the VM. Its OS changes are discarded;
+projects and saved agent state remain on the workspace disk.
+
+## Daily use
+
+### Access a development server
+
+Forward guest ports to the same ports on the host:
 
 ```console
 ./run.sh --forward 3000 --forward 8080
 ```
 
-To let Git inside the VM clone and push over SSH, forward one dedicated key
-from the host:
+For example, guest port 8080 becomes available at `http://127.0.0.1:8080`.
+The service can listen on `127.0.0.1` or `0.0.0.0` inside the VM. Forwarded ports
+are accessible only from the host and close when the session ends.
+
+### Use Git over SSH
+
+Forward a dedicated Git key from the host:
 
 ```console
 ./run.sh --git-ssh-key ~/.ssh/agent-github
 ```
 
-The matching public key must be registered with the Git host. `run.sh` starts
-a temporary, isolated `ssh-agent`, loads only the selected private key, and
-forwards that agent to the VM for the interactive session. The private key is
-never copied to the VM or the workspace disk. If the key is encrypted,
-`ssh-add` asks for its passphrase before the VM starts.
+Register the matching public key with your Git host first. If the key is
+encrypted, you will be prompted for its passphrase. Only this key is forwarded;
+the private key stays on the host. The VM can use it for authentication while
+the session is open, so choose a key with appropriately limited access.
 
-VM SSH connections ignore host SSH configuration and connection sharing.
-Agent forwarding is disabled except for the interactive session when
-`--git-ssh-key` is supplied; readiness and shutdown connections never forward it.
-
-On the first connection to a Git host, SSH may ask you to confirm its host key.
-Set the persistent commit identity once inside the VM:
+Set your commit identity once inside the VM:
 
 ```console
 git config --global user.name "Your Name"
 git config --global user.email "you@example.com"
 ```
 
-The resulting `.gitconfig` is stored on the persistent workspace. You can
-inspect the forwarded identity and test GitHub access from the VM with:
+These settings persist. To check forwarding and GitHub access, run `ssh-add -l`
+and `ssh -T git@github.com` inside the VM.
+
+### Adjust resources
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `ARCH_AGENT_MEMORY` | `8192` | VM memory in MiB |
+| `ARCH_AGENT_CPUS` | `4` | Virtual CPUs |
+| `ARCH_AGENT_SSH_PORT` | `2222` | Host SSH port |
+| `ARCH_AGENT_SYSTEM_SIZE` | `40G` | OS disk size when building |
+| `ARCH_AGENT_WORKSPACE_SIZE` | `64G` | Workspace size when first created |
+
+For example:
 
 ```console
-ssh-add -l
-ssh -T git@github.com
-```
-
-On the first Claude, Codex, OpenCode, or Pi launch, authenticate inside the VM
-(use `/connect` in OpenCode or `/login` in Pi). The resulting
-agent state is stored on the persistent workspace and reused on later boots.
-OpenCode's global configuration (`~/.config/opencode`) and application data
-(`~/.local/share/opencode`, including credentials and sessions) persist as well.
-
-Home-directory persistence is configured in `config/persist-home.conf`. Each
-entry declares a `dir`, `file`, or `json`, followed by its path relative to
-`/home/agent` and its storage path relative to `/workspace`. Changes take
-effect after rebuilding the base image. SSH `known_hosts` entries persist by
-default, while private keys and other SSH state remain ephemeral. Persisting
-the entire `.ssh` directory is included as a commented opt-in example.
-
-The image build creates a dedicated SSH key. The first run creates a sparse
-64 GB workspace disk, which consumes space only as data is written. Override
-defaults with environment variables:
-
-```console
-ARCH_AGENT_WORKSPACE_SIZE=100G ./run.sh
 ARCH_AGENT_MEMORY=16384 ARCH_AGENT_CPUS=8 ./run.sh
-ARCH_AGENT_SSH_PORT=2223 ./run.sh
 ```
 
-The workspace size variable only applies when the disk is first created.
+Both disks are sparse: their configured sizes are capacity limits, not space
+reserved on the host. Changing the workspace size setting does not resize an
+existing disk.
 
-To permanently wipe all projects, agent logins, and other persisted home state:
+### Update or reset
+
+Rebuild to update the included tools, then start a new session:
+
+```console
+./build-image.sh --force
+./run.sh
+```
+
+Rebuilding keeps the workspace. To reset only the OS, simply stop and restart
+the VM.
+
+To permanently delete all projects, agent logins, and other saved state:
 
 ```console
 ./wipe-workspace.sh
 ```
 
-The command refuses to run while the VM is using the workspace and asks for
-confirmation. For non-interactive use, pass `--force`.
+This asks for confirmation and refuses to run while the workspace is in use.
+Pass `--force` for non-interactive use.
 
-Leaving SSH—for example with `exit`, `Ctrl+D`, a lost connection, or closing
-the host terminal—makes `run.sh` request a clean guest poweroff. If that times
-out, it terminates QEMU as a fallback. In both cases it deletes the disposable
-OS overlay and keeps the workspace disk. Unused workspace blocks are returned
-to the host at session startup and during clean shutdown, keeping the sparse
-workspace image from retaining space previously occupied by deleted files.
+## Persistent data
 
-Sessions start only after workspace preparation succeeds and `/workspace` is
-mounted. The shutdown SSH command has a five-second timeout (with forced
-termination after another two seconds), followed by the QEMU shutdown fallback.
-SSH liveness checks also detect an unresponsive connection.
+The workspace disk is stored in `images/workspace.qcow2`.
 
-On a failed run or forced shutdown, the full VM serial log is saved as
-`logs/run-XXXXXXXX.log`, and its path is printed. If archiving fails, the log
-is kept in the temporary runtime directory instead.
+| Guest location | Contents |
+|---|---|
+| `/workspace/projects` | Your projects |
+| `/workspace/.agent-state` | Codex, Claude Code, OpenCode, and Pi credentials, settings, and sessions |
+| `/workspace/.home-state` | Selected home files, including GitHub CLI state, Git identity, shell history, and SSH known hosts |
 
-For a troubleshooting console, retain the SSH session while also opening the
-minimal Cage/Foot display:
+Edit [config/persist-home.conf](config/persist-home.conf) and rebuild to change
+which home paths persist. SSH private keys are not persisted by default; the
+config includes an example for opting in to the entire `.ssh` directory.
 
-```console
-ARCH_AGENT_DISPLAY=gtk ./run.sh
-```
+Everything outside the workspace is disposable, including tools installed
+during a session and Docker images, containers, and volumes. Docker works
+without sudo; bind mount directories under `/workspace` for persistent data.
+No host directory is shared with the VM.
+
+The suggested Codex and Claude Code commands disable permission checks;
+OpenCode uses its default permissions, and Pi does not ask before every tool
+call. Keep only data the agents may modify or delete on the workspace disk.
 
 ## Docker Compose mode
 
-The VM can also run as a service in an existing Compose stack. The container
-boots the same image, built from the same `cloud-init/` and
-`config/persist-home.conf`, and runs until the container stops. Connect over
-SSH to get a shell and start an agent.
+Run the VM as a service that stays up until the container stops. Copy
+[docker/compose.example.yaml](docker/compose.example.yaml) into your stack and set:
 
-CI publishes the container image to `ghcr.io/amm0nite/agent-vm` on every
-push to `main` that changes the image inputs, tagged `latest` and
-`sha-<commit>`. The VM image itself is not part of the container image: it is
-built into the data volume on first start, which takes several minutes. When a
-newer container image contains different provisioning files, the VM image is
-rebuilt automatically on the next start.
+- `KVM_GID`: the host's KVM group ID (`getent group kvm | cut -d: -f3`).
+- `ARCH_AGENT_AUTHORIZED_KEYS`: SSH public keys allowed to log in as `agent`,
+  one per line. Restart the container after changing them.
 
-Copy the service from [`docker/compose.example.yaml`](docker/compose.example.yaml)
-into the stack and set:
+The example uses `ghcr.io/amm0nite/agent-vm:latest`; `sha-<commit>` tags are also
+published. The first start builds the VM image in the data volume and takes
+several minutes. Updated container images automatically rebuild the VM image
+when provisioning files change.
 
-- `KVM_GID`: the host's `kvm` group ID (`getent group kvm | cut -d: -f3`).
-- `ARCH_AGENT_AUTHORIZED_KEYS`: one or more SSH public keys, one per line,
-  allowed to log in as `agent`. Changing them only needs a container restart.
+Memory, CPU, and disk-size settings use the same variables as above. Container
+shutdown allows 45 seconds by default, configurable with
+`ARCH_AGENT_SHUTDOWN_TIMEOUT`. Keep Compose's `stop_grace_period` longer than
+this timeout.
 
-`ARCH_AGENT_MEMORY`, `ARCH_AGENT_CPUS`, `ARCH_AGENT_WORKSPACE_SIZE`,
-`ARCH_AGENT_SYSTEM_SIZE`, and `ARCH_AGENT_SHUTDOWN_TIMEOUT` (default 45
-seconds) work as in host mode. Keep `stop_grace_period` longer than the
-shutdown timeout.
-
-From the stack's directory:
+Run these commands from your stack's directory:
 
 | Operation | Command |
 |---|---|
@@ -249,42 +176,43 @@ From the stack's directory:
 | Connect | `ssh -p 2222 agent@127.0.0.1` |
 | Update | `docker compose pull agent-vm && docker compose up -d agent-vm` |
 | Rebuild the VM image | `docker compose run --rm agent-vm build --force` |
-| Logs (build and VM console) | `docker compose logs -f agent-vm` |
+| View logs | `docker compose logs -f agent-vm` |
 | Reset the OS | `docker compose restart agent-vm` |
 | Wipe the workspace | Stop the service, then `docker compose run --rm agent-vm wipe --force` |
 
-Unlike host mode, disconnecting does not stop the VM, but it does end the
-processes of that SSH session. To keep an agent running between connections,
-start it inside `tmux` (`tmux new -A -s agent`), detach with `Ctrl+B D`, and
-reattach later with `ssh -p 2222 agent@127.0.0.1 -t tmux new -A -s agent`.
-Add `-A` to the SSH command to let Git use your forwarded agent, or `-L` to
-reach guest ports. After reattaching to `tmux` over a new connection, shells
-that were already open still point to the previous connection's agent; open a
-new window, or run `eval "$(tmux show-environment -s SSH_AUTH_SOCK)"` in the
-shell, to use the new one.
+Disconnecting leaves the VM running. To keep an agent session running too,
+connect with tmux:
 
-The container needs `/dev/kvm` but no privileges, Docker socket, or host
-directories. Everything persistent lives in the `/data` volume. The example
-puts the service on its own network so the VM cannot resolve or reach the
-rest of the stack by service name.
+```console
+ssh -p 2222 agent@127.0.0.1 -t tmux new -A -s agent
+```
 
-## Persistence and security
+Detach with `Ctrl+B D` and use the same command to reconnect. Add `-A` to forward
+your SSH agent, or `-L 8080:127.0.0.1:8080` to reach a guest service. After
+reconnecting with agent forwarding, open a new tmux window so its shell uses
+the new connection's agent.
 
-- `/workspace/projects` contains persistent work.
-- `/workspace/.agent-state` contains persistent Codex, Claude, OpenCode, and Pi state.
-- Selected home paths such as GitHub CLI state, `.gitconfig`, shell history,
-  and SSH `known_hosts` are declared in `config/persist-home.conf`.
-- Everything else is discarded after shutdown.
-- No host directory is shared with the VM.
-- Ports passed with `--forward` are carried through SSH and reachable only
-  through the host's loopback interface for the lifetime of the VM session.
-- A key passed with `--git-ssh-key` remains on the host, but the VM can request
-  signatures from it until the session ends. Prefer a dedicated, narrowly
-  authorized Git key rather than forwarding a general-purpose identity.
-- The suggested Codex and Claude commands disable permission checks; OpenCode
-  uses its default permissions, and Pi does not ask before every tool call. Only place data on the
-  workspace disk that the agents are allowed to modify or delete.
+The container needs access to `/dev/kvm`, but requires no privileged mode,
+Docker socket, or host directory mounts. Persistent data lives in the `/data`
+volume. The example uses a separate network to isolate it from other services
+in the stack.
 
-To reset only the OS, close the VM and start it again. Use
-`./wipe-workspace.sh` to reset the workspace; the next run creates a new blank
-disk.
+## Troubleshooting
+
+Build logs are saved in `logs/`. To watch the latest build:
+
+```console
+tail -f logs/latest-build.log
+```
+
+Use `ARCH_AGENT_TRACE=1 ./build-image.sh --force` for detailed shell tracing.
+Failed or interrupted builds do not replace the base image.
+
+Failed runs and forced shutdowns retain a VM console log and print its path,
+normally `logs/run-XXXXXXXX.log`.
+
+To open a graphical troubleshooting console alongside SSH:
+
+```console
+ARCH_AGENT_DISPLAY=gtk ./run.sh
+```
