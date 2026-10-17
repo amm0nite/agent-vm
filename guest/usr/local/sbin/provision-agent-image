@@ -16,15 +16,19 @@ sudo -u agent env HOME=/home/agent npm config set prefix /home/agent/.local
 # Keep Codex binaries on the OS disk: the standalone installer stores them in
 # ~/.codex, which workspace preparation replaces with persistent agent state.
 sudo -u agent env HOME=/home/agent npm install -g @openai/codex
+# Use the existing npm prefix to keep Pi binaries on the disposable OS disk.
+sudo -u agent env HOME=/home/agent npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 sudo -u agent env HOME=/home/agent curl -fsSL https://claude.ai/install.sh -o /tmp/install-claude.sh
 sudo -u agent env HOME=/home/agent bash /tmp/install-claude.sh
 rm -f /tmp/install-claude.sh
 test -x /home/agent/.local/bin/codex
 test -x /home/agent/.local/bin/claude
 test -x /usr/bin/opencode
+test -x /home/agent/.local/bin/pi
 sudo -u agent env HOME=/home/agent /home/agent/.local/bin/codex --version
 sudo -u agent env HOME=/home/agent /home/agent/.local/bin/claude --version
 sudo -u agent env HOME=/home/agent /usr/bin/opencode --version
+sudo -u agent env HOME=/home/agent /home/agent/.local/bin/pi --version
 systemctl enable prepare-workspace.service agent-authorized-keys.service
 systemctl set-default multi-user.target
 touch /etc/cloud/cloud-init.disabled

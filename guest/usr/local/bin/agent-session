@@ -15,5 +15,6 @@ printf '  Persistent workspace: /workspace/projects\n'
 printf '  Persistent agent state: /workspace/.agent-state\n\n'
 printf '  Start an agent with:  codex --yolo\n'
 printf '                        claude --dangerously-skip-permissions\n'
-printf '                        opencode\n\n'
+printf '                        opencode\n'
+printf '                        pi\n\n'
 exec bash -l
