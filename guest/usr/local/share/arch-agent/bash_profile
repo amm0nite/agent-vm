@@ -1,4 +1,7 @@
 export PATH="$HOME/.local/bin:$PATH"
+if [[ -r "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
+fi
 if [[ "$(tty 2>/dev/null)" == /dev/tty1 ]]; then
   if [[ "$(</sys/class/dmi/id/product_name)" == arch-agent-gtk ]]; then
     exec /usr/local/bin/graphical-agent-session

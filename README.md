@@ -33,7 +33,16 @@ Build the base image, then start a session:
 The build downloads and verifies Arch's official cloud image and installs the
 included tools. It needs network access and takes several minutes.
 
-The VM opens a shell in `/workspace/projects`. Start your preferred agent:
+The VM opens a shell in `/workspace/projects`.
+
+Bash includes colored file listings, command completion, and history shared
+between sessions. Its Starship prompt shows the user, hostname, directory, Git
+branch/status, and duration of commands taking longer than two seconds. It uses
+plain text symbols, so SSH clients do not need a special font. Use `ll` for a
+detailed listing or `la` to include hidden files. The prompt configuration lives
+in `guest/etc/arch-agent/starship.toml`; rebuild the image after changing it.
+
+Start your preferred agent:
 
 | Agent | Command |
 |---|---|

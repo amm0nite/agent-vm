@@ -1,3 +1,36 @@
 export PATH="$HOME/.local/bin:$PATH"
+
+# Keep interactive settings out of scripts and remote commands.
+[[ $- == *i* ]] || return
+
+if [[ -t 1 && ${TERM:-dumb} != dumb ]]; then
+  if command -v dircolors >/dev/null 2>&1; then
+    eval "$(dircolors -b)"
+  fi
+  alias ls='ls --color=auto'
+  alias grep='grep --color=auto'
+  PS1='\[\e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+else
+  PS1='\u@\h:\w\$ '
+fi
 alias ll='ls -alF'
+alias la='ls -A'
+
+# Save each command promptly and share history between SSH/tmux shells.
+HISTSIZE=10000
+HISTFILESIZE=20000
+HISTCONTROL=ignoreboth
+shopt -s histappend checkwinsize
+PROMPT_COMMAND='history -a; history -n'
+
+if [[ -r /usr/share/bash-completion/bash_completion ]]; then
+  source /usr/share/bash-completion/bash_completion
+fi
+
 cd /workspace/projects 2>/dev/null || true
+
+# Initialize after the history hook so Starship can preserve it.
+if [[ -t 1 && ${TERM:-dumb} != dumb ]] && command -v starship >/dev/null 2>&1; then
+  export STARSHIP_CONFIG="${STARSHIP_CONFIG:-/etc/arch-agent/starship.toml}"
+  eval "$(starship init bash)"
+fi

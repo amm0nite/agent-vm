@@ -1,0 +1,39 @@
+# ASCII-only prompt: works over SSH without installing special fonts.
+format = '$username$hostname$directory$git_branch$git_status$cmd_duration$character'
+add_newline = false
+
+[username]
+show_always = true
+format = '[$user]($style)'
+style_user = 'bold green'
+
+[hostname]
+ssh_only = false
+format = '[@$hostname]($style) '
+style = 'bold green'
+
+[directory]
+style = 'bold blue'
+truncation_length = 3
+truncation_symbol = '.../'
+read_only = ' ro'
+
+[git_branch]
+symbol = ''
+format = '[git:$branch]($style) '
+
+[git_status]
+ahead = 'ahead:${count}'
+behind = 'behind:${count}'
+diverged = 'diverged:ahead:${ahead_count}/behind:${behind_count}'
+renamed = 'r'
+deleted = 'x'
+
+[cmd_duration]
+min_time = 2000
+format = '[took $duration]($style) '
+
+[character]
+success_symbol = '[>](bold green)'
+error_symbol = '[>](bold red)'
+vimcmd_symbol = '[<](bold green)'
