@@ -33,8 +33,9 @@ Build the base image, then start a session:
 The build downloads and verifies Arch's official cloud image and installs the
 included tools. It needs network access and takes several minutes.
 
-The VM opens a Bash shell in `/workspace/projects`, with completion, persistent
-history, and a Starship prompt. Start your preferred agent:
+The VM opens a Bash shell in the `agent` tmux session in `/workspace/projects`,
+with mouse support, completion, persistent history, and a Starship prompt.
+Start your preferred agent:
 
 | Agent | Command |
 |---|---|
@@ -46,8 +47,9 @@ history, and a Starship prompt. Start your preferred agent:
 Authenticate inside the VM on first use (`/connect` in OpenCode, `/login` in Pi).
 Credentials and sessions persist across boots.
 
-Exit the shell or close the terminal to stop the VM. Its OS changes are discarded;
-projects and saved agent state remain on the workspace disk.
+Exit the last tmux shell, detach (`Ctrl+B D`), or close the terminal to stop the VM.
+Its OS changes are discarded; projects and saved agent state remain on the
+workspace disk.
 
 ## Daily use
 
