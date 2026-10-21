@@ -1,39 +1,54 @@
-# ASCII-only prompt: works over SSH without installing special fonts.
-format = '$username$hostname$directory$git_branch$git_status$cmd_duration$character'
-add_newline = false
+# ASCII-only badges: works over SSH without installing special fonts.
+format = '$username$hostname$directory$git_branch$git_status$git_state$cmd_duration$line_break$character'
+add_newline = true
 
 [username]
 show_always = true
-format = '[$user]($style)'
-style_user = 'bold green'
+format = '[ $user]($style)'
+style_user = 'bold fg:117 bg:24'
+style_root = 'bold fg:white bg:red'
 
 [hostname]
 ssh_only = false
-format = '[@$hostname]($style) '
-style = 'bold green'
+format = '[@$hostname ]($style) '
+style = 'bold fg:117 bg:24'
 
 [directory]
-style = 'bold blue'
+format = '[ $path$read_only ]($style) '
+style = 'bold fg:117 bg:237'
 truncation_length = 3
 truncation_symbol = '.../'
 read_only = ' ro'
 
 [git_branch]
 symbol = ''
-format = '[git:$branch]($style) '
+format = '[ git:$branch ]($style) '
+style = 'bold fg:183 bg:237'
 
 [git_status]
+format = '([$all_status$ahead_behind]($style) )'
+style = 'fg:222'
+conflicted = 'conflict:${count} '
+untracked = '?${count} '
+stashed = 'stash:${count} '
+modified = '!${count} '
+staged = '+${count} '
+renamed = 'r${count} '
+deleted = 'x${count} '
 ahead = 'ahead:${count}'
 behind = 'behind:${count}'
 diverged = 'diverged:ahead:${ahead_count}/behind:${behind_count}'
-renamed = 'r'
-deleted = 'x'
+
+[git_state]
+format = '[ $state( $progress_current/$progress_total) ]($style) '
+style = 'bold fg:231 bg:131'
 
 [cmd_duration]
 min_time = 2000
 format = '[took $duration]($style) '
+style = 'fg:245'
 
 [character]
-success_symbol = '[>](bold green)'
+success_symbol = '[>](bold fg:117)'
 error_symbol = '[>](bold red)'
-vimcmd_symbol = '[<](bold green)'
+vimcmd_symbol = '[<](bold fg:183)'

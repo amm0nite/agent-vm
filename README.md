@@ -34,7 +34,7 @@ The build downloads and verifies Arch's official cloud image and installs the
 included tools. It needs network access and takes several minutes.
 
 The VM opens a Bash shell in the `agent` tmux session in `/workspace/projects`,
-with mouse support, completion, persistent history, and a Starship prompt.
+with completion, persistent history, and a Starship prompt.
 Start your preferred agent:
 
 | Agent | Command |
@@ -187,7 +187,7 @@ Disconnecting leaves the VM running. To keep an agent session running too,
 connect with tmux:
 
 ```console
-ssh -p 2222 agent@127.0.0.1 -t tmux new -A -s agent
+ssh -p 2222 agent@127.0.0.1 -t tmux -u new -A -s agent
 ```
 
 Detach with `Ctrl+B D` and use the same command to reconnect. Add `-A` to forward

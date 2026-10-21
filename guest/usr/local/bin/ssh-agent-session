@@ -6,4 +6,5 @@ shutdown_guest() {
 }
 trap shutdown_guest EXIT HUP TERM
 
-tmux new-session -A -s agent -c /workspace/projects /usr/local/bin/agent-session
+# SSH may start tmux before the login shell sets a UTF-8 locale.
+tmux -u new-session -A -s agent -c /workspace/projects /usr/local/bin/agent-session
