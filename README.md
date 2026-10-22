@@ -183,6 +183,11 @@ Run these commands from your stack's directory:
 | Reset the OS | `docker compose restart agent-vm` |
 | Wipe the workspace | Stop the service, then `docker compose run --rm agent-vm wipe --force` |
 
+VM console output is saved separately from Compose logs. View it with
+`docker compose exec agent-vm tail -f /data/logs/serial.log`.
+This log is replaced on each boot; image-build console output is saved in
+`/data/logs/build-serial.log` and replaced on each build.
+
 Disconnecting leaves the VM running. To keep an agent session running too,
 connect with tmux:
 

@@ -41,7 +41,8 @@ build_image() {
 
   # Run the build in the background so a container stop interrupts it
   # immediately; signal the whole process group to stop QEMU as well.
-  "$app_dir/build-image.sh" "$@" &
+  ARCH_AGENT_BUILD_SERIAL_LOG="$vm_log_dir/build-serial.log" \
+    "$app_dir/build-image.sh" "$@" &
   build_pid=$!
   trap 'trap - TERM INT; kill -TERM 0 2>/dev/null || true' TERM INT
   wait "$build_pid" || status=$?
@@ -121,8 +122,12 @@ run_vm() {
   mkdir -p -- "$runtime_dir"
   vm_create_overlay "$overlay_image"
 
+  mkdir -p "$vm_log_dir"
+  # Start a fresh console log each boot; retain it after the VM stops.
+  : >"$vm_log_dir/serial.log"
   printf 'Starting a disposable Arch OS with persistent workspace.\n'
   printf 'SSH: container port %s\n' "$ssh_port"
+  printf 'VM console log: %s/serial.log\n' "$vm_log_dir"
 
   # QMP stays on a Unix socket: the guest can reach the container's loopback.
   vm_set_qemu_args none "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
@@ -131,7 +136,7 @@ run_vm() {
     -display none \
     -monitor none \
     -qmp "unix:$runtime_dir/qmp.sock,server=on,wait=off" \
-    -serial file:/dev/stdout \
+    -serial "file:$vm_log_dir/serial.log" \
     -smbios "type=11,value=io.systemd.credential.binary:arch-agent.authorized_keys=$authorized_keys" &
   qemu_pid=$!
   trap stop_vm TERM INT

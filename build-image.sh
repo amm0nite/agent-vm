@@ -145,19 +145,27 @@ if [[ -r /dev/kvm && -w /dev/kvm ]]; then
 fi
 
 printf 'Provisioning the image. The VM will power itself off when ready...\n'
+console_options=(-nographic)
+console_log="$log_file"
+if [[ -n "${ARCH_AGENT_BUILD_SERIAL_LOG:-}" ]]; then
+  console_log="$ARCH_AGENT_BUILD_SERIAL_LOG"
+  : >"$console_log"
+  console_options=(-display none -monitor none -serial "file:$console_log")
+  printf 'Build console log: %s\n' "$console_log"
+fi
 qemu-system-x86_64 \
   "${acceleration[@]}" \
   -name arch-agent-image-builder \
   -m 4096 \
   -smp 2 \
-  -nographic \
+  "${console_options[@]}" \
   -no-reboot \
   -nic user,model=virtio-net-pci \
   -drive "if=none,id=os,file=$build_image,format=qcow2" \
   -device virtio-blk-pci,drive=os,serial=AI_OS \
   -drive "if=virtio,file=$seed_image,format=raw,readonly=on"
 
-if ! grep -Fq ARCH_AGENT_IMAGE_READY "$log_file"; then
+if ! grep -Fq ARCH_AGENT_IMAGE_READY "$console_log"; then
   die "guest provisioning did not emit its success marker; refusing to save the base image"
 fi
 
