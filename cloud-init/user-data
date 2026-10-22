@@ -1,6 +1,7 @@
 #cloud-config
 hostname: arch-agent
 manage_etc_hosts: true
+ssh_pwauth: false
 
 users:
   - name: agent
