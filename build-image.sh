@@ -144,7 +144,7 @@ if [[ -r /dev/kvm && -w /dev/kvm ]]; then
   acceleration=(-enable-kvm -cpu host)
 fi
 
-printf 'Provisioning the image. The VM will power itself off when ready...\n'
+printf 'Provisioning the base image. The build VM will shut down when finished...\n'
 console_options=(-nographic)
 console_log="$log_file"
 if [[ -n "${ARCH_AGENT_BUILD_SERIAL_LOG:-}" ]]; then
@@ -156,8 +156,8 @@ fi
 qemu-system-x86_64 \
   "${acceleration[@]}" \
   -name arch-agent-image-builder \
-  -m 4096 \
-  -smp 2 \
+  -m "${ARCH_AGENT_MEMORY:-8192}" \
+  -smp "${ARCH_AGENT_CPUS:-4}" \
   "${console_options[@]}" \
   -no-reboot \
   -nic user,model=virtio-net-pci \
