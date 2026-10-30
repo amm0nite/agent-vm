@@ -19,7 +19,6 @@ packages:
   - base-devel
   - bash-completion
   - bubblewrap
-  - cage
   - curl
   - dbus
   - docker
@@ -27,7 +26,6 @@ packages:
   - e2fsprogs
   - fd
   - fzf
-  - foot
   - git
   - github-cli
   - go
@@ -40,12 +38,10 @@ packages:
   - npm
   - opencode
   - openssh
-  - polkit
   - ripgrep
   - rsync
   - starship
   - tmux
-  - ttf-dejavu
   - unzip
   - wget
 

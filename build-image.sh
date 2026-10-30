@@ -49,10 +49,6 @@ if [[ "${ARCH_AGENT_TRACE:-0}" == 1 ]]; then
   set -x
 fi
 
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || die "missing command '$1' ($2)"
-}
-
 force=false
 if [[ "${1:-}" == --force ]]; then
   force=true
@@ -60,14 +56,14 @@ elif [[ $# -ne 0 ]]; then
   die "usage: $0 [--force]"
 fi
 
-require_command curl "install curl"
-require_command qemu-img "install QEMU"
-require_command qemu-system-x86_64 "install qemu-system-x86_64"
-require_command cloud-localds "install cloud-image-utils"
-require_command sha256sum "install coreutils"
-require_command ssh-keygen "install openssh-client"
-require_command base64 "install coreutils"
-require_command tar "install tar"
+vm_require_command curl "install curl"
+vm_require_command qemu-img "install QEMU"
+vm_require_command qemu-system-x86_64 "install qemu-system-x86_64"
+vm_require_command cloud-localds "install cloud-image-utils"
+vm_require_command sha256sum "install coreutils"
+vm_require_command ssh-keygen "install openssh-client"
+vm_require_command base64 "install coreutils"
+vm_require_command tar "install tar"
 [[ -d "$guest_dir" ]] || die "missing guest files: $guest_dir"
 [[ -r "$persist_home_config" ]] || die "missing persistence config: $persist_home_config"
 

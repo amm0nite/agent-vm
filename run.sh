@@ -6,7 +6,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/lib/vm.sh"
 workspace_size="${ARCH_AGENT_WORKSPACE_SIZE:-64G}"
 ssh_port="${ARCH_AGENT_SSH_PORT:-2222}"
-display_mode="${ARCH_AGENT_DISPLAY:-none}"
 git_ssh_key=""
 forwarded_ports=()
 
@@ -47,16 +46,6 @@ while (( $# > 0 )); do
       ;;
   esac
 done
-
-case "$display_mode" in
-  none)
-    display=(-display none)
-    ;;
-  gtk)
-    display=(-display gtk,zoom-to-fit=on -device virtio-vga,edid=on,xres=1280,yres=800)
-    ;;
-  *) die "ARCH_AGENT_DISPLAY must be 'none' or 'gtk'" ;;
-esac
 
 vm_is_port "$ssh_port" || \
   die "ARCH_AGENT_SSH_PORT must be a port number between 1 and 65535"
@@ -220,10 +209,10 @@ for forward_port in "${forwarded_ports[@]}"; do
   printf 'TCP forward: 127.0.0.1:%s -> guest:%s\n' "$forward_port" "$forward_port"
 done
 
-vm_set_qemu_args "$display_mode" "$overlay_image" 127.0.0.1 "$ssh_port"
+vm_set_qemu_args "$overlay_image" 127.0.0.1 "$ssh_port"
 qemu-system-x86_64 \
   "${vm_qemu_args[@]}" \
-  "${display[@]}" \
+  -display none \
   -daemonize \
   -pidfile "$pid_file" \
   -serial "file:$serial_log"

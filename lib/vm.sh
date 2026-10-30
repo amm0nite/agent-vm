@@ -71,12 +71,10 @@ vm_set_ssh_options() {
 }
 
 # Sets vm_qemu_args for a VM booting the overlay and the persistent workspace.
-# The display mode is exposed to the guest through the SMBIOS product name.
 vm_set_qemu_args() {
-  local display_mode="$1"
-  local overlay="$2"
-  local ssh_address="$3"
-  local ssh_port="$4"
+  local overlay="$1"
+  local ssh_address="$2"
+  local ssh_port="$3"
   local acceleration=(-machine accel=tcg)
   if [[ -r /dev/kvm && -w /dev/kvm ]]; then
     acceleration=(-enable-kvm -cpu host)
@@ -85,7 +83,6 @@ vm_set_qemu_args() {
   vm_qemu_args=(
     "${acceleration[@]}"
     -name arch-agent
-    -smbios "type=1,product=arch-agent-$display_mode"
     -m "${ARCH_AGENT_MEMORY:-8192}"
     -smp "${ARCH_AGENT_CPUS:-4}"
     -nic "user,model=virtio-net-pci,hostfwd=tcp:$ssh_address:$ssh_port-:22"

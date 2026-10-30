@@ -130,7 +130,7 @@ run_vm() {
   printf 'VM console log: %s/serial.log\n' "$vm_log_dir"
 
   # QMP stays on a Unix socket: the guest can reach the container's loopback.
-  vm_set_qemu_args none "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
+  vm_set_qemu_args "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
   qemu-system-x86_64 \
     "${vm_qemu_args[@]}" \
     -display none \

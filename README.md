@@ -1,15 +1,15 @@
 # Disposable Arch Agent VM
 
-A fresh Arch Linux VM on every boot, with a persistent workspace for projects
-and agent logins. Connect through SSH and start Codex, Claude Code, OpenCode,
-or Pi. Development tools, Docker, and Docker Compose are included.
+An SSH-only Arch Linux VM for Codex, Claude Code, OpenCode, and Pi. Each boot
+starts with a clean OS; projects and agent logins persist on a separate disk.
+Development tools, Docker, and Docker Compose are included.
 
 Run it from your terminal or as a [Docker Compose service](#docker-compose-mode).
 
 ## Quick start
 
-Install the host dependencies. KVM access is optional but strongly recommended
-for performance.
+Use a Linux host with QEMU. Read/write access to `/dev/kvm` enables hardware
+acceleration; otherwise the VM uses slower software emulation.
 
 On Arch Linux:
 
@@ -35,6 +35,7 @@ included tools. It needs network access and takes several minutes.
 
 The VM opens a Bash shell in the `agent` tmux session in `/workspace/projects`,
 with completion, persistent history, and a Starship prompt.
+
 Start your preferred agent:
 
 | Agent | Command |
@@ -117,8 +118,9 @@ Rebuild to update the included tools, then start a new session:
 ./run.sh
 ```
 
-Rebuilding keeps the workspace. To reset only the OS, simply stop and restart
-the VM.
+Stop the VM before rebuilding. Rebuilding keeps the workspace and is also how
+you apply changes to guest packages or configuration. Restarting without a
+rebuild discards session changes and returns to the existing base image.
 
 To permanently delete all projects, agent logins, and other saved state:
 
@@ -166,7 +168,9 @@ published. The first start builds the VM image in the data volume and takes
 several minutes. Updated container images automatically rebuild the VM image
 when provisioning files change.
 
-Memory, CPU, and disk-size settings use the same variables as above. Container
+Memory, CPU, and disk-size settings use the same variables as above. The
+container listens on port 2222; change the Compose port mapping to use a
+different host port. Container
 shutdown allows 45 seconds by default, configurable with
 `ARCH_AGENT_SHUTDOWN_TIMEOUT`. Keep Compose's `stop_grace_period` longer than
 this timeout.
@@ -178,10 +182,12 @@ Run these commands from your stack's directory:
 | Start | `docker compose up -d agent-vm` |
 | Connect | `ssh -p 2222 agent@127.0.0.1` |
 | Update | `docker compose pull agent-vm && docker compose up -d agent-vm` |
-| Rebuild the VM image | `docker compose run --rm agent-vm build --force` |
+| Rebuild the VM image | Stop the service, then `docker compose run --rm agent-vm build --force` |
 | View logs | `docker compose logs -f agent-vm` |
 | Reset the OS | `docker compose restart agent-vm` |
 | Wipe the workspace | Stop the service, then `docker compose run --rm agent-vm wipe --force` |
+
+Start the service again after an explicit rebuild or wipe.
 
 VM console output is saved separately from Compose logs. View it with
 `docker compose exec agent-vm tail -f /data/logs/serial.log`.
@@ -219,8 +225,17 @@ Failed or interrupted builds do not replace the base image.
 Failed runs and forced shutdowns retain a VM console log and print its path,
 normally `logs/run-XXXXXXXX.log`.
 
-To open a graphical troubleshooting console alongside SSH:
+## Customize the image
 
-```console
-ARCH_AGENT_DISPLAY=gtk ./run.sh
-```
+Edit these files, then rebuild:
+
+| File | Controls |
+|---|---|
+| [cloud-init/user-data](cloud-init/user-data) | Guest packages and initial user setup |
+| [guest/usr/local/sbin/provision-agent-image](guest/usr/local/sbin/provision-agent-image) | Agent installation and service setup |
+| [config/persist-home.conf](config/persist-home.conf) | Home files and directories kept across boots |
+| [guest/etc/arch-agent/starship.toml](guest/etc/arch-agent/starship.toml) | Shell prompt |
+
+Host launchers share disk, SSH, and QEMU helpers in [lib/vm.sh](lib/vm.sh).
+CI checks shell syntax and smoke-tests the container before publishing it;
+it does not boot-test the provisioned VM.
