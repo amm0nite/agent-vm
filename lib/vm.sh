@@ -19,7 +19,7 @@ vm_require_command() {
 }
 
 vm_is_port() {
-  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]] && (( $1 >= 1 && $1 <= 65535 ))
+  [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
 }
 
 # Hold the workspace lock on file descriptor 9 until the process exits.
@@ -75,6 +75,12 @@ vm_set_qemu_args() {
   local overlay="$1"
   local ssh_address="$2"
   local ssh_port="$3"
+  shift 3
+  local network="user,model=virtio-net-pci,hostfwd=tcp:$ssh_address:$ssh_port-:22"
+  local forward
+  for forward in "$@"; do
+    network+=",hostfwd=$forward"
+  done
   local acceleration=(-machine accel=tcg)
   if [[ -r /dev/kvm && -w /dev/kvm ]]; then
     acceleration=(-enable-kvm -cpu host)
@@ -85,7 +91,7 @@ vm_set_qemu_args() {
     -name arch-agent
     -m "${ARCH_AGENT_MEMORY:-8192}"
     -smp "${ARCH_AGENT_CPUS:-4}"
-    -nic "user,model=virtio-net-pci,hostfwd=tcp:$ssh_address:$ssh_port-:22"
+    -nic "$network"
     -drive "if=none,id=os,file=$overlay,format=qcow2,discard=unmap"
     -device virtio-blk-pci,drive=os,serial=AI_OS
     -drive "if=none,id=workspace,file=$vm_workspace_image,format=qcow2,cache=writeback,discard=unmap"

@@ -13,7 +13,35 @@ qemu_ssh_port=2221
 runtime_dir="${ARCH_AGENT_RUNTIME_DIR:-/data/run}"
 build_stamp="$vm_base_image.inputs"
 qemu_pid=""
-relay_pid=""
+stopping=false
+relay_pids=()
+forwarded_ports=()
+forward_backend_ports=()
+qemu_forwards=()
+
+configure_forwards() {
+  local port backend=65535
+  local -A used_ports=([2221]=1 [2222]=1)
+  # Accept a whitespace-separated list, including multiline Compose values.
+  local value="${ARCH_AGENT_FORWARD_PORTS:-}"
+  value="${value//$'\n'/ }"
+  value="${value//$'\r'/ }"
+  read -r -a forwarded_ports <<<"$value"
+  for port in "${forwarded_ports[@]}"; do
+    vm_is_port "$port" || die "ARCH_AGENT_FORWARD_PORTS contains an invalid TCP port: $port"
+    [[ ! -v "used_ports[$port]" ]] || die "duplicate or reserved TCP port: $port (2221 and 2222 are reserved)"
+    used_ports[$port]=1
+  done
+  for port in "${forwarded_ports[@]}"; do
+    while [[ -v "used_ports[$backend]" ]]; do
+      (( backend-- ))
+      (( backend > 0 )) || die "too many forwarded ports"
+    done
+    used_ports[$backend]=1
+    forward_backend_ports+=("$backend")
+    qemu_forwards+=("tcp:127.0.0.1:$backend-:$port")
+  done
+}
 
 usage() {
   cat <<'EOF'
@@ -76,6 +104,7 @@ qmp() {
 }
 
 stop_vm() {
+  stopping=true
   trap - TERM INT
   printf 'Stopping the VM...\n'
 
@@ -104,6 +133,7 @@ run_vm() {
   local authorized_keys
   local status=0
 
+  configure_forwards
   [[ -n "${ARCH_AGENT_AUTHORIZED_KEYS:-}" ]] || \
     die "set ARCH_AGENT_AUTHORIZED_KEYS to the SSH public keys allowed to log in"
   ssh-keygen -l -f <(printf '%s\n' "$ARCH_AGENT_AUTHORIZED_KEYS") >/dev/null 2>&1 || \
@@ -130,7 +160,7 @@ run_vm() {
   printf 'VM console log: %s/serial.log\n' "$vm_log_dir"
 
   # QMP stays on a Unix socket: the guest can reach the container's loopback.
-  vm_set_qemu_args "$overlay_image" 127.0.0.1 "$qemu_ssh_port"
+  vm_set_qemu_args "$overlay_image" 127.0.0.1 "$qemu_ssh_port" "${qemu_forwards[@]}"
   qemu-system-x86_64 \
     "${vm_qemu_args[@]}" \
     -display none \
@@ -146,14 +176,27 @@ run_vm() {
   # replies never leave the VM. Relaying through loopback makes every client
   # appear as the QEMU gateway, 10.0.2.2.
   socat "TCP-LISTEN:$ssh_port,fork,reuseaddr" "TCP:127.0.0.1:$qemu_ssh_port" &
-  relay_pid=$!
+  relay_pids+=("$!")
+  local index
+  for index in "${!forwarded_ports[@]}"; do
+    printf 'TCP forward: container:%s -> guest:%s\n' "${forwarded_ports[index]}" "${forwarded_ports[index]}"
+    socat "TCP-LISTEN:${forwarded_ports[index]},fork,reuseaddr" \
+      "TCP:127.0.0.1:${forward_backend_ports[index]}" &
+    relay_pids+=("$!")
+  done
 
-  wait "$qemu_pid" || status=$?
+  # A failed listener must stop the service rather than leave it partly exposed.
+  wait -n "$qemu_pid" "${relay_pids[@]}" || status=$?
+  if [[ "$stopping" == false ]] && kill -0 "$qemu_pid" 2>/dev/null; then
+    stop_vm
+    status=1
+  fi
   while kill -0 "$qemu_pid" 2>/dev/null; do
     wait "$qemu_pid" || status=$?
   done
 
-  kill -TERM "$relay_pid" 2>/dev/null || true
+  kill -TERM "${relay_pids[@]}" 2>/dev/null || true
+  wait "${relay_pids[@]}" 2>/dev/null || true
   rm -rf -- "$runtime_dir"
   exit "$status"
 }

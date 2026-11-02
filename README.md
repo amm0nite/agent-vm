@@ -206,6 +206,12 @@ your SSH agent, or `-L 8080:127.0.0.1:8080` to reach a guest service. After
 reconnecting with agent forwarding, open a new tmux window so its shell uses
 the new connection's agent.
 
+For HTTP access without an SSH tunnel, set `ARCH_AGENT_FORWARD_PORTS: "8080"`
+and add `"127.0.0.1:8080:8080"` to your Compose `ports` (see the commented
+example). Recreate the container with `docker compose up -d agent-vm`, then
+run the guest server on `0.0.0.0:8080` to reach it at `http://127.0.0.1:8080`.
+Use a space-separated list for multiple ports; ports 2221 and 2222 are reserved.
+
 The container needs access to `/dev/kvm`, but requires no privileged mode,
 Docker socket, or host directory mounts. Persistent data lives in the `/data`
 volume. The example uses a separate network to isolate it from other services

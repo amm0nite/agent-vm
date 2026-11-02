@@ -12,9 +12,11 @@ services:
       - "${KVM_GID}"                           # getent group kvm | cut -d: -f3
     ports:
       - "127.0.0.1:2222:2222"
+      # - "127.0.0.1:8080:8080"                 # also enable ARCH_AGENT_FORWARD_PORTS
     environment:
       ARCH_AGENT_MEMORY: 8192                  # MiB
       ARCH_AGENT_CPUS: 4
+      # ARCH_AGENT_FORWARD_PORTS: "8080"        # space-separated guest TCP ports
       ARCH_AGENT_WORKSPACE_SIZE: 64G           # only used when the workspace is created
       ARCH_AGENT_AUTHORIZED_KEYS: "ssh-ed25519 AAAA... you@host"
     volumes:
