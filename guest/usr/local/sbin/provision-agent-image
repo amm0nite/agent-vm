@@ -6,6 +6,7 @@ usermod -aG docker agent
 # on the next boot, when the installed kernel and modules match.
 systemctl enable docker.service
 sudo -u agent docker --version
+sudo -u agent docker buildx version
 sudo -u agent docker compose version
 sudo -u agent docker-compose version
 sudo -u agent starship --version
