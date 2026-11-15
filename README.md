@@ -89,6 +89,9 @@ git config --global user.email "you@example.com"
 These settings persist. To check forwarding and GitHub access, run `ssh-add -l`
 and `ssh -T git@github.com` inside the VM.
 
+GitHub CLI (`gh`) and GitLab CLI (`glab`) are included. Authenticate inside the
+VM with `gh auth login` or `glab auth login`; their settings and logins persist.
+
 ### Adjust resources
 
 | Environment variable | Default | Purpose |
@@ -139,7 +142,7 @@ The workspace disk is stored in `images/workspace.qcow2`.
 |---|---|
 | `/workspace/projects` | Your projects |
 | `/workspace/.agent-state` | Codex, Claude Code, OpenCode, and Pi credentials, settings, and sessions |
-| `/workspace/.home-state` | Selected home files, including GitHub CLI state, Git identity, shell history, and SSH known hosts |
+| `/workspace/.home-state` | Selected home files, including GitHub and GitLab CLI state, Git identity, shell history, and SSH known hosts |
 
 Edit [config/persist-home.conf](config/persist-home.conf) and rebuild to change
 which home paths persist. SSH private keys are not persisted by default; the

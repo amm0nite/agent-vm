@@ -29,6 +29,7 @@ packages:
   - fzf
   - git
   - github-cli
+  - glab
   - go
   - jq
   - less

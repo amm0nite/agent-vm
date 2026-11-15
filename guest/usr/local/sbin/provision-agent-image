@@ -10,6 +10,8 @@ sudo -u agent docker buildx version
 sudo -u agent docker compose version
 sudo -u agent docker-compose version
 sudo -u agent starship --version
+sudo -u agent gh --version
+sudo -u agent glab --version
 
 install -d -o agent -g agent /home/agent /home/agent/.local
 install -o agent -g agent -m 0644 /usr/local/share/arch-agent/bash_profile /home/agent/.bash_profile
