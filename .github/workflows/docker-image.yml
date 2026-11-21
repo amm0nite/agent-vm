@@ -13,6 +13,7 @@ on:
       - guest/**
       - lib/**
       - run.sh
+      - tests/**
       - wipe-workspace.sh
   workflow_dispatch:
 
@@ -33,6 +34,9 @@ jobs:
               bash -n "$file"
             fi
           done < <(git ls-files)
+
+      - name: Test launcher interruption
+        run: python3 -m unittest discover -s tests -v
 
       - uses: docker/setup-buildx-action@v4
 

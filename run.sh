@@ -68,6 +68,8 @@ vm_require_command qemu-system-x86_64 "install QEMU"
 vm_require_command jq "install jq"
 vm_require_command ssh "install openssh-client"
 vm_require_command flock "install util-linux"
+vm_require_command ss "install iproute2"
+vm_require_command setsid "install util-linux"
 vm_require_command timeout "install coreutils"
 if [[ -n "$git_ssh_key" ]]; then
   vm_require_command ssh-agent "install openssh-client"
@@ -85,10 +87,10 @@ vm_check_qcow2 "$vm_workspace_image" "workspace image"
 
 runtime_dir="$(mktemp -d -t arch-agent-vm.XXXXXXXX)"
 overlay_image="$runtime_dir/os-overlay.qcow2"
-pid_file="$runtime_dir/qemu.pid"
 serial_log="$runtime_dir/serial.log"
 known_hosts="$runtime_dir/known_hosts"
 qemu_pid=""
+qemu_starting=false
 git_agent_pid=""
 git_agent_socket=""
 git_agent_log=""
@@ -100,6 +102,13 @@ ssh_options=("${vm_ssh_options[@]}")
 
 process_is_running() {
   [[ -n "$qemu_pid" ]] && kill -0 "$qemu_pid" 2>/dev/null
+}
+
+qemu_owns_ssh_port() {
+  local listeners
+  process_is_running || return 1
+  listeners="$(ss -Hltnp "src 127.0.0.1 and sport = :$ssh_port")" || return 1
+  [[ "$listeners" == *"pid=$qemu_pid,"* ]]
 }
 
 wait_for_qemu_exit() {
@@ -116,13 +125,21 @@ cleanup() {
   local status="${1:-$?}"
   [[ "$cleanup_started" == false ]] || return
   cleanup_started=true
-  trap - EXIT HUP INT TERM
+  trap - EXIT
+  # A second Ctrl+C must not interrupt shutdown and leave the disk locked.
+  trap '' HUP INT TERM
+  set +e
+
+  # A signal can arrive between spawning QEMU and assigning its PID.
+  if [[ "$qemu_starting" == true && -z "$qemu_pid" && ${!:-} != "$previous_job" ]]; then
+    qemu_pid="${!:-}"
+  fi
 
   if process_is_running; then
     printf '\nStopping the disposable VM...\n'
 
     # Prefer a clean guest shutdown so the persistent ext4 workspace unmounts.
-    if [[ "$ssh_ready" == true ]]; then
+    if qemu_owns_ssh_port; then
       timeout --kill-after=2s 5s ssh "${ssh_options[@]}" \
         -o ConnectTimeout=2 \
         agent@127.0.0.1 \
@@ -135,6 +152,9 @@ cleanup() {
       kill -TERM "$qemu_pid" 2>/dev/null || true
       wait_for_qemu_exit 25 || kill -KILL "$qemu_pid" 2>/dev/null || true
     fi
+  fi
+  if [[ -n "$qemu_pid" ]]; then
+    wait "$qemu_pid" 2>/dev/null || true
   fi
 
   if [[ -n "$git_agent_pid" ]] && kill -0 "$git_agent_pid" 2>/dev/null; then
@@ -157,7 +177,7 @@ cleanup() {
   fi
 
   rm -f -- \
-    "$overlay_image" "$pid_file" "$known_hosts" \
+    "$overlay_image" "$known_hosts" \
     "$git_agent_socket" "$git_agent_log"
   rmdir -- "$runtime_dir" 2>/dev/null || true
   exit "$status"
@@ -210,18 +230,23 @@ for forward_port in "${forwarded_ports[@]}"; do
 done
 
 vm_set_qemu_args "$overlay_image" 127.0.0.1 "$ssh_port"
-qemu-system-x86_64 \
+# Keep QEMU as our child so cleanup knows its PID throughout startup. With
+# -daemonize, Ctrl+C could run cleanup before the daemon wrote its PID file.
+# A separate session keeps terminal signals from killing QEMU before cleanup
+# can request a clean shutdown of the persistent workspace.
+previous_job=${!:-}
+qemu_starting=true
+setsid qemu-system-x86_64 \
   "${vm_qemu_args[@]}" \
   -display none \
-  -daemonize \
-  -pidfile "$pid_file" \
-  -serial "file:$serial_log"
-
-qemu_pid="$(<"$pid_file")"
+  -monitor none \
+  -serial "file:$serial_log" &
+qemu_pid=$!
+qemu_starting=false
 
 printf 'Waiting for SSH'
 for (( attempt = 1; attempt <= 120; attempt++ )); do
-  if ssh "${ssh_options[@]}" \
+  if qemu_owns_ssh_port && ssh "${ssh_options[@]}" \
       -o ConnectTimeout=1 \
       agent@127.0.0.1 \
       true </dev/null >/dev/null 2>&1; then
